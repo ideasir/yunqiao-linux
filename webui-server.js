@@ -335,8 +335,11 @@ function stopAgentProc() {
   });
 }
 function startAgentProc() {
+  // worker 连接的目标中转 = WebUI 配置里的 relayUrl（用户可在配置里改）
+  let host = 'yunqiao.very.im';
+  try { host = new URL(RELAY_URL).hostname; } catch (e) {}
   return new Promise((resolve) => {
-    exec(`cd ${AGENT_DIR} && (setsid nohup python3 tcp_agent.py --reverse --relay-ip yunqiao.very.im --relay-port 19998 > agent.log 2>&1 < /dev/null &)`, (e, so) => resolve());
+    exec(`cd ${AGENT_DIR} && (setsid nohup python3 tcp_agent.py --reverse --relay-ip ${host} --relay-port 19998 > agent.log 2>&1 < /dev/null &)`, (e, so) => resolve());
   });
 }
 
@@ -361,13 +364,25 @@ async function handleApi(method, args) {
       const st = await agentStatus();
       return { success: true, relayUrl: RELAY_URL, pairCode: (mcpTicket || pairCode).toString().slice(0, 6), relayConnected: st.connected, agentRunning: st.running, ...sysInfo() };
     }
-    case 'get_settings':
-      return { success: true, key: RELAY_KEY, relayUrl: RELAY_URL, deviceName: os.hostname(), workDir: cfg.workDir || '', autoConnect: cfg.autoConnect || false, directMode: cfg.directMode || false };
+    case 'get_settings': {
+      // 脱敏：密钥只显示前4+****+后4，不泄露完整值
+      let maskedKey = '';
+      if (RELAY_KEY) maskedKey = RELAY_KEY.length > 8 ? RELAY_KEY.slice(0, 4) + '****' + RELAY_KEY.slice(-4) : '****';
+      return { success: true, key: maskedKey, relayUrl: RELAY_URL, deviceName: os.hostname(), workDir: cfg.workDir || '', autoConnect: cfg.autoConnect || false, directMode: cfg.directMode || false };
+    }
     case 'save_settings': {
       const [key, relay_url, auto_connect, direct_mode] = args;
-      if (key) RELAY_KEY = key; if (relay_url) RELAY_URL = relay_url.replace(/\/+$/, '');
+      // 脱敏保护：key 含 **** 占位符 → 视为未修改，保持原值
+      if (key && key.indexOf('****') === -1) RELAY_KEY = key;
+      if (relay_url) RELAY_URL = relay_url.replace(/\/+$/, '');
       cfg.key = RELAY_KEY; cfg.relayUrl = RELAY_URL; cfg.autoConnect = auto_connect; cfg.directMode = direct_mode;
       cfg.pairCode = pairCode; cfg.deviceName = os.hostname(); saveJson(CONFIG_FILE, cfg);
+      // 中转配置变化：网页开着则用新中转重启 worker
+      if (sseCount > 0) {
+        await stopAgentProc();
+        await new Promise(r => setTimeout(r, 600));
+        await startAgentProc();
+      }
       return { success: true };
     }
     case 'get_sessions': return { success: true, ...readSessions() };
@@ -525,6 +540,7 @@ const server = http.createServer(async (req, res) => {
     // 登录页 + 认证静态资源（免认证）
     if (p === '/login') { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); res.end(LOGIN_HTML); return; }
     if (p === '/qrcode.min.js') { try { res.writeHead(200, { 'Content-Type': 'text/javascript' }); res.end(fs.readFileSync(QR_PATH)); } catch (e) { res.writeHead(404); res.end(); } return; }
+    if (p === '/tailwind.local.js') { try { res.writeHead(200, { 'Content-Type': 'text/javascript' }); res.end(fs.readFileSync(path.join(__dirname, 'tailwind.local.js'))); } catch (e) { res.writeHead(404); res.end(); } return; }
 
     // 认证 API（登录流程）
     if (p === '/api/auth/verify') {
