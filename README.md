@@ -98,8 +98,9 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/login   # 200
 
 ### 第 6 步：配置中转连接参数（可选）
 
-WebUI 默认连 `https://yunqiao.very.im`，管理员密钥默认 `eman821015`。如需修改：
+WebUI 连接中转服务器的地址与管理员密钥在【WebUI 配置】里填写（保存后自动生效，密钥显示为脱敏格式）。
 
+如需预置配置（部署时初始化）：
 1. 先创建配置文件：
    ```bash
    mkdir -p ~/.yunqiao
