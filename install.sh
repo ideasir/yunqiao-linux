@@ -77,7 +77,7 @@ done
 
 log "下载 WebUI → $WEBUI_DIR"
 mkdir -p "$WEBUI_DIR"
-for f in webui-server.js ui.html qrcode.min.js; do
+for f in webui-server.js ui.html qrcode.min.js tailwind.local.js; do
   fetch "$f" "$WEBUI_DIR/$f" || die "下载 $f 失败"
 done
 
