@@ -110,6 +110,24 @@ WebUI 连接中转服务器的地址与管理员密钥在【WebUI 配置】里�
 
 ---
 
+## 🌐 域名 + HTTPS 反代（推荐）
+
+WebUI 默认监听 `0.0.0.0:8081`，可通过域名 + Nginx 反代提供 HTTPS 访问（避免 IP+端口被网络限制）。
+
+仓库 `linux/nginx/` 提供完整配置示例：
+
+```bash
+# 1. 签证书（acme.sh）
+curl https://get.acme.sh | sh
+~/.acme.sh/acme.sh --issue -d <你的域名> --webroot /var/www/certbot
+
+# 2. 用 nginx 示例改域名/证书路径后放入 nginx
+sudo cp linux/nginx/arm.oauth.eu.cc.conf /etc/nginx/sites-enabled/<你的域名>
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+> ⚠️ **关键坑（必须配置）**：`proxy_buffering off;`——WebUI 用 **SSE** 实时推送中转状态，nginx 默认缓冲会把推送卡住，界面永远显示"连不上中转服务器"，示例已包含，别删掉。
+
 ## ⚙️ systemd 常驻（可选，两种模式）
 
 ### 模式 A：worker 常驻（随时可被 Agent 操作，不受网页开关控制）
