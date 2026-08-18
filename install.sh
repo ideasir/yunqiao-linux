@@ -14,6 +14,17 @@ API_BASE="https://api.github.com/repos/ideasir/yunqiao-linux/contents"
 CDN_BASE="https://cdn.jsdelivr.net/gh/ideasir/yunqiao-linux@$BRANCH"
 RAW_BASE="https://raw.githubusercontent.com/ideasir/yunqiao-linux/$BRANCH"
 
+# 端口自适应：默认 WEBUI_PORT，被占用则自动找空闲端口
+port_free() { ! ss -tln 2>/dev/null | grep -q ":$1 "; }
+pick_port() {
+  local p="$1"
+  local i
+  for i in $(seq 0 30); do
+    port_free "$((p + i))" && { echo "$((p + i))"; return; }
+  done
+  echo "$p"  # 兜底
+}
+
 # 带多源 fallback 的下载：$1=文件名 $2=目标路径
 fetch() {
   curl -fsSL -m 20 -H "Accept: application/vnd.github.raw+json" "$API_BASE/$1" -o "$2" 2>/dev/null && return 0
@@ -84,7 +95,8 @@ EOF
   log "已生成配置 $CONFIG_DIR/config.json（中转信息待 WebUI 里填写）"
 fi
 
-# ─── 4. 启动 WebUI ────────────────────────────────
+# ─── 4. 启动 WebUI（端口自适应）────────────────
+WEBUI_PORT=$(pick_port "$WEBUI_PORT")
 log "启动 WebUI（端口 $WEBUI_PORT）..."
 pkill -f "[n]ode webui-server.js" 2>/dev/null || true
 sleep 1
@@ -92,9 +104,10 @@ cd "$WEBUI_DIR"
 YUNQIAO_WEBUI_PORT="$WEBUI_PORT" setsid nohup node webui-server.js > webui.log 2>&1 < /dev/null &
 sleep 3
 if pgrep -f "[n]ode webui-server.js" >/dev/null; then
-  log "✅ WebUI 已启动"
+  log "✅ WebUI 已启动（端口 $WEBUI_PORT）"
 else
   warn "WebUI 启动失败，请看 $WEBUI_DIR/webui.log"
+  tail -5 "$WEBUI_DIR/webui.log" 2>/dev/null || true
   exit 1
 fi
 
