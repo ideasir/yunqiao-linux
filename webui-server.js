@@ -30,7 +30,7 @@ function saveJson(p, o) { try { fs.mkdirSync(path.dirname(p), { recursive: true 
 
 const cfg = loadJson(CONFIG_FILE, {});
 let RELAY_URL = (cfg.relayUrl || 'https://yunqiao.very.im').replace(/\/+$/, '');
-let RELAY_KEY = cfg.key || 'eman821015';
+let RELAY_KEY = cfg.key || '';
 let pairCode = cfg.pairCode || String(Math.floor(100000 + Math.random() * 900000));
 let mcpTicket = null;
 
