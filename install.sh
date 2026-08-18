@@ -68,6 +68,17 @@ if ! command -v node >/dev/null 2>&1 || [ "$(node -v | tr -dc '0-9' | cut -c1-2)
 fi
 command -v node >/dev/null 2>&1 || die "Node.js 未安装成功"
 
+# ─── 1.5 Python 依赖验证 + 自动补救 ─────────────
+# apt 可能因依赖问题装不上（如 libsecret），失败时用 pip 补救
+if ! python3 -c "import psutil" >/dev/null 2>&1 || ! python3 -c "import websockets" >/dev/null 2>&1; then
+  log "Python 依赖缺失，尝试 pip 安装（psutil + websockets）..."
+  python3 -m pip install --break-system-packages psutil "websockets==12.0" >/dev/null 2>&1 || \
+    sudo python3 -m pip install --break-system-packages psutil "websockets==12.0" >/dev/null 2>&1 || \
+    warn "pip 安装失败，请手动安装：python3 -m pip install psutil websockets==12.0"
+fi
+python3 -c "import psutil" >/dev/null 2>&1 || warn "psutil 不可用：进程管理将回退到 ps 命令（功能受限）"
+python3 -c "import websockets" >/dev/null 2>&1 || warn "websockets 不可用：将仅走 TCP 直连（无法回退 WebSocket）"
+
 # ─── 2. 拉取代码 ──────────────────────────────────
 log "下载 Worker → $WORKER_DIR"
 mkdir -p "$WORKER_DIR" "$WORKER_DIR/worker"
