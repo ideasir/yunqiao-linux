@@ -34,7 +34,6 @@ try:
     HAS_WS = True
 except ImportError:
     HAS_WS = False
-import psutil
 from pathlib import Path
 from common import Session, SessionManager
 
