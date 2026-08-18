@@ -78,20 +78,29 @@ function otpauthUri() {
   return `otpauth://totp/${issuer}:admin?secret=${totpSecret}&issuer=${issuer}`;
 }
 
-// session（HttpOnly cookie）
-const sessions = new Map(); // token -> expiry
+// session：无状态签名 token（重启不失效，cookie 存 7 天）
+const SESSION_SECRET = cfg.sessionSecret || crypto.randomBytes(32).toString('hex');
+if (!cfg.sessionSecret) { cfg.sessionSecret = SESSION_SECRET; saveJson(CONFIG_FILE, cfg); }
 function issueSession() {
-  const t = crypto.randomBytes(24).toString('hex');
-  sessions.set(t, Date.now() + 7 * 24 * 3600 * 1000); // 7 天
-  return t;
+  const exp = Date.now() + 7 * 24 * 3600 * 1000;
+  const payload = Buffer.from(JSON.stringify({ exp })).toString('base64url');
+  const sig = crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest('base64url');
+  return payload + '.' + sig;
 }
 function authed(req) {
   const cookie = (req.headers.cookie || '');
-  const m = cookie.match(/(?:^|;\s*)__yk=([a-f0-9]+)/);
+  const m = cookie.match(/(?:^|;\s*)__yk=([A-Za-z0-9._-]+)/);
   if (!m) return false;
-  const exp = sessions.get(m[1]);
-  if (!exp || exp < Date.now()) { sessions.delete(m[1]); return false; }
-  return true;
+  const parts = m[1].split('.');
+  if (parts.length !== 2) return false;
+  const [payload, sig] = parts;
+  const expected = crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest('base64url');
+  const a = Buffer.from(sig), b = Buffer.from(expected);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return false;
+  try {
+    const { exp } = JSON.parse(Buffer.from(payload, 'base64url').toString());
+    return exp > Date.now();
+  } catch (e) { return false; }
 }
 
 // ─── 登录页（现代深色）─────────────────────────
@@ -431,10 +440,10 @@ async function handleApi(method, args) {
     }
     case 'cancel_command': { const r = await relayFetch('/api/cancel', { method: 'POST' }); return { success: r.ok, error: r.data?.error }; }
     case 'toggle_connect': {
-      // 桌面版语义：连接=拉起 tcp_agent；断开=停掉它
+      // "连接"语义：确保 worker 在跑（不切换/不停）——断开交给 disconnect_agent 或关网页
       const running = await agentRunningP();
-      if (running) await stopAgentProc(); else await startAgentProc();
-      await new Promise(r => setTimeout(r, 800));
+      if (!running) await startAgentProc();
+      await new Promise(r => setTimeout(r, 1200));
       const now = await agentRunningP();
       return { success: true, connected: now, running: now };
     }
@@ -570,7 +579,7 @@ const server = http.createServer(async (req, res) => {
     // 实时事件流（SSE，需登录）
     if (p === '/events') {
       if (!authed(req)) { res.writeHead(401); res.end(); return; }
-      res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' });
+      res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive', 'X-Accel-Buffering': 'no' });
       res.write(': connected\n\n');
       sseClients.add(res);
       onUiOpen();
