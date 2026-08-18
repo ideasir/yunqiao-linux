@@ -1,0 +1,2434 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22><text y=%2214%22 font-size=%2214%22 fill=%22%23888%22>~</text></svg>">
+<title>云桥 MCP v2.2</title>
+<!-- v=20260731-1640 -->
+<script src="./tailwind.local.js"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        dark: { 950: '#0a0a0a', 900: '#111111', 800: '#171717', 700: '#222222', 600: '#2a2a2a', 500: '#333333' }
+      }
+    }
+  }
+}
+</script>
+<link rel="preconnect" href="https://fonts.loli.net">
+<link href="https://fonts.loli.net/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Inter', 'Noto Sans SC', sans-serif; background: #0a0a0a; color: #ededed; }
+  .font-mono { font-family: 'JetBrains Mono', 'Consolas', monospace; }
+  ::-webkit-scrollbar { width: 3px; height: 3px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #262626; border-radius: 2px; }
+  ::-webkit-scrollbar-thumb:hover { background: #333333; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  @keyframes blinkFast { 0%,100% { opacity: 1; } 50% { opacity: 0.1; } }
+@keyframes modalIn { from { opacity: 0; transform: scale(0.9) translateY(20px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+@keyframes slide-up { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+  .animate-pulse { animation: pulse 2s ease-in-out infinite; }
+  .blink-fast { animation: blinkFast 0.3s ease-in-out infinite; }
+  .animate-slide-up { animation: slide-up 0.2s ease; }
+  .hidden { display: none; }
+  button:active { transform: scale(.95); }
+
+  /* 任务队列抽屉:收起时一个小条,展开时向上延伸 */
+  #taskPanel { width: 148px; max-height: 34px; overflow: hidden; transition: all .25s ease; }
+  #taskPanel.expanded { width: 280px; max-height: 320px; }
+
+  /* 日志系统(IDE 风格) */
+  .lg-time { color: #666; font-family: 'JetBrains Mono', Consolas, monospace; flex-shrink: 0; min-width: 56px; }
+  .lg-badge { font-size: 9px; font-family: 'JetBrains Mono', Consolas, monospace; padding: 0 4px; border-radius: 3px; border: 1px solid; flex-shrink: 0; line-height: 13px; margin-top: 1px; }
+  .lg-fbtn.active { background: #222; color: #ededed; }
+  .cmd-body pre { margin: 0; font-family: inherit; white-space: pre-wrap; word-break: break-all; }
+  .entry { user-select: text; -webkit-user-select: text; }
+
+  /* 自定义复选框(替代浏览器默认样式,贴合深色主题) */
+  input[type="checkbox"] { -webkit-appearance: none; appearance: none; width: 14px; height: 14px; border: 1px solid #555; border-radius: 3px; background: #1a1a1a; cursor: pointer; position: relative; vertical-align: middle; }
+  input[type="checkbox"]:hover { border-color: #888; }
+  input[type="checkbox"]:checked { background: #4ade80; border-color: #4ade80; }
+  input[type="checkbox"]:checked::after { content: ''; position: absolute; left: 4px; top: 1px; width: 4px; height: 8px; border: solid #0a0a0a; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+
+/* -- task markers -- */
+#taskMarkerCol { position:absolute; left:0; top:0; bottom:0; width:28px; z-index:10; pointer-events:none; display:flex; flex-direction:column; align-items:center; padding-top:8px; gap:2px; overflow:hidden; }
+.task-marker { width:10px; height:10px; border-radius:50%; flex-shrink:0; cursor:pointer; transition:all .2s ease; border:2px solid #333; pointer-events:auto; position:relative; }
+.task-marker:hover { transform:scale(1.3); }
+.task-marker.active { background:#3b82f6; border-color:#3b82f666; box-shadow:0 0 6px #3b82f644; }
+.task-marker.done { background:#4ade80; border-color:#4ade8066; }
+.task-marker.err { background:#ff6b6b; border-color:#ff6b6b66; }
+.task-marker .tm-label { position:absolute; left:18px; top:-2px; white-space:nowrap; font-size:9px; color:#888; font-family:sans-serif; pointer-events:none; opacity:0; transition:opacity .15s; }
+.task-marker:hover .tm-label { opacity:1; }
+.task-block { margin-left:28px; }
+.task-block.collapsed .cmd-body { display:none !important; }
+
+/* -- 任务分割块(日志区按任务切块,当前块钉顶闪烁,历史块折叠可展开) -- */
+.task-split { position: sticky; top: 0; z-index: 15; margin: 0 0 2px 0; border: 1px solid #2a2a2a; border-radius: 8px; background: rgba(18,18,18,.97); backdrop-filter: blur(4px); overflow: hidden; transition: border-color .2s, box-shadow .2s, opacity .2s; }
+.task-split.active { border-color: rgba(59,130,246,.55); box-shadow: 0 0 14px rgba(59,130,246,.12); animation: taskSplitGlow 2s ease-in-out infinite; }
+.task-split.urgent { border-color: rgba(255,107,107,.6); }
+.task-split.urgent.active { animation: taskSplitGlowUrgent 1.2s ease-in-out infinite; }
+.task-split-head { display: flex; align-items: center; gap: 8px; padding: 6px 10px; cursor: pointer; user-select: none; background: #151515; transition: background .15s; }
+.task-split.active .task-split-head { background: linear-gradient(90deg, #16233a, #151515); }
+.task-split.urgent.active .task-split-head { background: linear-gradient(90deg, #331a1a, #151515); }
+.task-split-head:hover { background: #1c1c1c; }
+.task-split.active .task-split-head:hover, .task-split.urgent.active .task-split-head:hover { background: #1a1a1a; }
+.task-split-num { font-size: 9px; font-weight: 600; color: #3b82f6; background: rgba(59,130,246,.12); border: 1px solid rgba(59,130,246,.3); border-radius: 4px; padding: 1px 5px; font-family: 'JetBrains Mono', monospace; flex-shrink: 0; }
+.task-split.urgent .task-split-num { color: #ff6b6b; background: rgba(255,107,107,.12); border-color: rgba(255,107,107,.3); }
+.task-split-name { flex: 1; min-width: 0; color: #d4d4d4; font-size: 12px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-split.active .task-split-name { color: #93c5fd; }
+.task-split.urgent.active .task-split-name { color: #fca5a5; }
+.task-split-status { font-size: 10px; font-family: 'JetBrains Mono', monospace; flex-shrink: 0; color: #888; }
+.task-split.active .task-split-status { color: #fbbf24; animation: blinkFast 1s ease-in-out infinite; }
+/* running(已读,执行中):稳定蓝色,不闪烁;只有 pending(待执行)才闪烁 */
+.task-split.status-running .task-split-status { color: #3b82f6; animation: none; }
+.task-split.status-running .task-split-name { color: #7fb0fa; }
+.task-split.status-running.active { animation: none; border-color: rgba(59,130,246,.7); box-shadow: 0 0 10px rgba(59,130,246,.15); }
+.task-split.status-pending.active .task-split-status { animation: blinkFast 1s ease-in-out infinite; }
+.task-split-arrow { font-size: 10px; color: #555; flex-shrink: 0; transition: transform .2s; }
+.task-split.collapsed .task-split-arrow { transform: rotate(-90deg); }
+.task-split-body { padding: 0 4px 4px 12px; }
+.task-split.collapsed .task-split-body { display: none; }
+.task-split.collapsed { opacity: .8; border-color: #222; box-shadow: none; animation: none; }
+.task-split.collapsed .task-split-head { background: #101010; }
+.task-split.collapsed .task-split-name { color: #777; }
+.task-split.collapsed .task-split-status { color: #4ade80; }
+.task-split.collapsed .task-split-num { color: #888; background: rgba(136,136,136,.1); border-color: rgba(136,136,136,.25); }
+@keyframes taskSplitGlow { 0%,100% { border-color: rgba(59,130,246,.55); box-shadow: 0 0 14px rgba(59,130,246,.12); } 50% { border-color: rgba(59,130,246,.95); box-shadow: 0 0 22px rgba(59,130,246,.28); } }
+@keyframes taskSplitGlowUrgent { 0%,100% { border-color: rgba(255,107,107,.6); box-shadow: 0 0 14px rgba(255,107,107,.15); } 50% { border-color: rgba(255,107,107,1); box-shadow: 0 0 24px rgba(255,107,107,.35); } }
+
+/* 用户消息及其执行过程特殊颜色标记(琥珀金) -- 执行完成后恢复 */
+.task-split .ts-user-msg { background: rgba(252,211,77,.06); border-radius: 4px; padding: 1px 4px; }
+.task-split .ts-user-msg .lg-badge { color: #fbbf24; border-color: rgba(252,211,77,.4); }
+.task-split .ts-user-msg .lg-time { color: #b45309; }
+/* 任务块内处于"执行中/待执行"期间的用户消息相关命令 → 琥珀金左侧条 + 徽章 */
+.task-split.active .task-split-body .entry { border-left: 2px solid rgba(252,211,77,.18); }
+.task-split.active .cmd-block { border-left: 2px solid rgba(252,211,77,.3); }
+.task-split.active .cmd-block .lg-badge { color: #fbbf24; border-color: rgba(252,211,77,.35); }
+.task-split.active .cmd-block .lg-time { color: #b45309; }
+/* 执行完成(折叠)后恢复默认颜色 */
+.task-split.collapsed .task-split-body .entry { border-left: 2px solid rgba(255,255,255,.04); }
+.task-split.collapsed .cmd-block { border-left: none; }
+.task-split.collapsed .cmd-block .lg-badge { color: #3b82f6; border-color: rgba(59,130,246,.27); }
+.task-split.collapsed .cmd-block .lg-time { color: #666; }
+#taskPanel { min-width:200px; }
+#taskPanelBody .tp-item { padding:6px 10px; font-size:11px; border-bottom:1px solid #1a1a1a; cursor:pointer; display:flex; align-items:center; gap:8px; transition:background .15s; }
+#taskPanelBody .tp-item:hover { background:#1a1a1a; }
+#taskPanelBody .tp-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+#taskPanelBody .tp-dot.running { background:#3b82f6; }
+#taskPanelBody .tp-dot.done { background:#4ade80; }
+#taskPanelBody .tp-dot.err { background:#ff6b6b; }
+#taskPanelBody .tp-text { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#ccc; }
+#taskPanelBody .tp-text.done-text { color:#666; text-decoration:line-through; }
+#taskPanelBody .tp-time { font-size:9px; color:#555; font-family:monospace; }
+</style>
+
+</head>
+<body class="h-screen flex flex-col overflow-hidden bg-[#0a0a0a]" style="background:#0a0a0a">
+
+<!-- 启动画面:纯内联 CSS,不依赖 CDN,避免白屏;页面就绪后由 JS 淡出 -->
+<div id="splashScreen" style="position:fixed;inset:0;z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:#0a0a0a;transition:opacity .35s ease;">
+  <div style="width:44px;height:44px;border-radius:12px;background:#ededed;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:800;color:#0a0a0a;font-family:Inter,sans-serif;">云</div>
+  <div style="width:120px;height:3px;background:#222;border-radius:2px;overflow:hidden;">
+    <div id="splashBar" style="width:0%;height:100%;background:#4ade80;border-radius:2px;transition:width .3s ease;"></div>
+  </div>
+  <div style="font-size:11px;color:#666;font-family:'Noto Sans SC',sans-serif;">云桥正在启动...</div>
+</div>
+
+<!-- ─── 标题栏 ─── -->
+<header class="pywebview-drag-region relative flex items-center gap-3 px-5 py-2.5 flex-shrink-0 select-none bg-[#0a0a0a] ">
+  <div class="w-5 h-5 rounded flex items-center justify-center text-[10px] font-bold text-black bg-[#ededed] flex-shrink-0 ">~</div>
+  <span class="text-sm font-medium text-[#ededed]">云桥 MCP</span>
+  <span class="text-xs text-[#666] font-mono">v2.2</span>
+  <button onclick="copySkillInfo()" class="text-[10px] text-[#888] hover:text-[#ededed] border border-[#222] hover:border-[#333] rounded px-2 py-1 transition-colors cursor-pointer bg-transparent" title="复制云桥技能安装信息,粘贴发给智能体">📦 给智能体安装 skills</button>
+  <div class="flex-1"></div>
+  <div id="activityDots" title="并发连接数" style="position:fixed;top:18px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:2px;pointer-events:none;z-index:999;min-height:6px"></div>
+  <button onclick="copyRepoUrl()" class="w-7 h-7 flex items-center justify-center rounded hover:bg-[#1a1a1a] transition-colors cursor-pointer" title="作者:李不是狼 (点击复制仓库地址)">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="#888" aria-label="GitHub"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.55 0-.27-.01-1.17-.02-2.12-3.2.7-3.87-1.36-3.87-1.36-.52-1.33-1.28-1.68-1.28-1.68-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.03 1.76 2.69 1.25 3.35.96.1-.75.4-1.25.72-1.54-2.55-.29-5.23-1.28-5.23-5.68 0-1.26.45-2.28 1.18-3.09-.12-.29-.51-1.46.11-3.05 0 0 .96-.31 3.15 1.18a10.9 10.9 0 0 1 5.74 0c2.19-1.49 3.15-1.18 3.15-1.18.62 1.59.23 2.76.11 3.05.73.81 1.18 1.83 1.18 3.09 0 4.41-2.69 5.38-5.25 5.67.41.35.77 1.05.77 2.12 0 1.53-.01 2.76-.01 3.14 0 .3.2.66.8.55A11.51 11.51 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5z"/></svg>
+  </button>
+  <button onclick="window.open('https://chat.deepseek.com','_blank')" class="w-5 h-5 flex items-center justify-center rounded cursor-pointer transition-opacity hover:opacity-80" title="本项目由 DeepSeek 驱动开发">
+    <svg width="18" height="18" viewBox="0 0 24 24" aria-label="DeepSeek"><circle cx="12" cy="12" r="10" fill="#4d6fe8"/><path d="M6 16c0-4 2.7-7 6-7s6 3 6 7h-2c0-2.8-1.8-5-4-5s-4 2.2-4 5H6z" fill="white"/></svg>
+  </button>
+  <button onclick="window.open('https://qm.qq.com','_blank')" class="w-5 h-5 flex items-center justify-center rounded cursor-pointer transition-opacity hover:opacity-80" title="QQ">
+    <svg width="18" height="18" viewBox="0 0 24 24" aria-label="QQ"><circle cx="12" cy="12" r="10" fill="#12B7F5"/><path d="M7 13c0-2.8 2.2-5 5-5s5 2.2 5 5v1c0 1.5-1.2 2.5-2.5 2.5H14l-2 2-2-2H9.5C8.2 16.5 7 15.5 7 14v-1z" fill="white"/></svg>
+  </button>
+  <button onclick="windowMinimize()" class="w-7 h-7 flex items-center justify-center rounded text-[#888] hover:bg-[#1a1a1a] hover:text-[#ededed] transition-colors cursor-pointer" title="最小化">─</button>
+  <button onclick="windowClose()" class="w-7 h-7 flex items-center justify-center rounded text-[#888] hover:bg-[#ff6b6b] hover:text-white transition-colors cursor-pointer" title="关闭">✕</button>
+</header>
+
+<!-- ─── 主体 ─── -->
+<div class="flex flex-1 overflow-hidden gap-0">
+
+  <!-- 左侧侧边栏 -->
+  <div class="flex flex-col items-center gap-1.5 py-2.5 px-1.5 flex-shrink-0 select-none bg-[#0d0d0d] ">
+    <div class="w-7 h-7 flex items-center justify-center rounded-lg cursor-pointer text-base font-semibold text-[#888] transition-all hover:bg-[#1a1a1a] hover:text-[#ededed]" onclick="createSession()" title="新建工作区">+</div>
+    <div class="w-4 h-px my-0.5 bg-[#222]"></div>
+    <div class="flex flex-col gap-1 items-center flex-1 overflow-y-auto w-full px-0.5" id="sidebarList"></div>
+      <!-- 上下文菜单 -->
+    <div id="ctxMenu" class="fixed z-50 rounded-lg bg-[#1a1a1a] border border-[#333] shadow-xl py-1" style="display:none; min-width:160px;">
+      <div class="px-3 py-1.5 text-xs text-[#aaa] hover:bg-[#222] hover:text-[#ededed] cursor-pointer transition-colors" onclick="ctxSetDefault()">设为默认工作区</div>
+      <div id="ctxIndexItem" class="px-3 py-1.5 text-xs text-[#a78bfa] hover:bg-[#222] hover:text-[#aaa] cursor-pointer transition-colors" onclick="ctxBuildIndex()" title="为当前工作区建立代码知识图谱(需含代码文件)">🧠 建立索引</div>
+      <div class="px-3 py-1.5 text-xs text-[#aaa] hover:bg-[#222] hover:text-[#ff6b6b] cursor-pointer transition-colors border-t border-[#222]" onclick="ctxDelete()">删除工作区</div>
+    </div>
+  </div>
+
+  <!-- 左侧:对话/日志 -->
+  <div class="flex-1 relative flex flex-col min-w-0 bg-[#0a0a0a]">
+
+    <!-- 路径栏 -->
+    <div class="flex items-center gap-2 px-5 py-2 flex-shrink-0 select-none bg-[#0a0a0a] ">
+      <span class="text-[#666] text-sm font-bold">❯</span>
+      <span class="text-xs font-mono text-[#aaa] flex-1 truncate" id="currentCwd">~</span>
+      <button onclick="copyLog()" class="text-[10px] text-[#555] hover:text-[#aaa] transition-colors cursor-pointer bg-transparent border-0" title="复制日志">📋</button>
+    </div>
+
+    <!-- 日志工具条 -->
+    <div class="flex items-center gap-1 px-4 py-1 flex-shrink-0 select-none bg-[#0d0d0d] border-y border-[#1a1a1a]">
+      <button class="lg-fbtn active text-[10px] px-1.5 py-0.5 rounded text-[#ccc] hover:text-white transition-colors" data-f="all" onclick="setLogFilter('all')">全部</button>
+      <button class="lg-fbtn text-[10px] px-1.5 py-0.5 rounded text-[#666] hover:text-[#ccc] transition-colors" data-f="cmd" onclick="setLogFilter('cmd')">命令</button>
+      <button class="lg-fbtn text-[10px] px-1.5 py-0.5 rounded text-[#666] hover:text-[#ccc] transition-colors" data-f="file" onclick="setLogFilter('file')">文件</button>
+      <button class="lg-fbtn text-[10px] px-1.5 py-0.5 rounded text-[#666] hover:text-[#ccc] transition-colors" data-f="err" onclick="setLogFilter('err')">错误</button>
+      <button class="lg-fbtn text-[10px] px-1.5 py-0.5 rounded text-[#666] hover:text-[#ccc] transition-colors" data-f="msg" onclick="setLogFilter('msg')">消息</button>
+      <div class="flex-1"></div>
+      <button id="autoScrollBtn" class="text-[10px] text-[#555] hover:text-[#aaa] transition-colors bg-transparent border-0 cursor-pointer" onclick="toggleAutoScroll()" title="自动滚动到底部">⤓ 滚动</button>
+      <button class="text-[10px] text-[#a78bfa] hover:text-[#aaa] transition-colors bg-transparent border-0 cursor-pointer" onclick="userBuildIndex()" title="为当前工作区建立 CodeGraph 语义索引(大项目推荐)">🧠 索引</button>
+      <button class="text-[10px] text-[#555] hover:text-[#aaa] transition-colors bg-transparent border-0 cursor-pointer" onclick="clearLog()" title="清空日志">清空</button>
+    </div>
+
+    <!-- 日志区 -->
+    <div class="flex-1 overflow-y-auto font-mono text-xs leading-relaxed" id="sessionLogWrap" style="position:relative;">
+      <div id="taskMarkerCol"></div>
+      <div class="px-4 py-2" id="sessionLog">
+      <div class="entry flex items-start gap-2 py-[3px] animate-slide-up"><span class="lg-time">--:--:--</span><span class="lg-badge" style="color:#4ade80;border-color:#4ade8044;">SYS</span><span class="text-[#888]">云桥 v2.2 运行中</span></div>
+    </div>
+    </div>
+
+    <!-- 输入区:发布任务/提醒,回车发送(! 前缀 = 紧急最高优先级) -->
+    <div class="flex items-stretch flex-shrink-0 bg-[#0a0a0a] border-t border-[#1a1a1a]">
+      <span class="flex items-center pl-5 pr-1 text-[#888] text-sm font-bold select-none" title="发布任务给 Agent">📋</span>
+      <input type="text" id="cmdInput" class="flex-1 bg-transparent border-none text-[#ededed] px-3 py-3 font-mono text-xs outline-none placeholder-[#666]" placeholder="发布任务/提醒,回车发送(! 前缀 = 紧急最高优先级)" spellcheck="false" onkeydown="if(event.key==='Enter')sendCommand()" />
+      <button onclick="sendCommand()" class="px-3 text-[10px] text-[#888] hover:text-[#ededed] transition-colors bg-transparent border-0 cursor-pointer" title="发布任务">发布</button>
+    </div>
+
+    <!-- 任务队列抽屉(日志区域右上角,无任务收缩/有任务自动展开) -->
+    <div id="taskPanel" class="absolute rounded-xl bg-[#141414] border border-[#222222] shadow-2xl z-40 select-none" style="top:74px; right:12px;">
+      <div class="flex items-center gap-2 px-3 py-2 border-b border-[#1f1f1f] cursor-pointer" onclick="toggleTaskPanel()" title="点击展开/收起">
+        <div class="w-1.5 h-1.5 rounded-full flex-shrink-0" id="taskPanelDot" style="background:#333;"></div>
+        <span class="text-xs font-medium text-[#ccc] whitespace-nowrap">任务队列</span>
+        <span class="ml-auto text-[10px] font-mono text-[#888]" id="taskPanelCount">0</span>
+        <span class="text-[10px] text-[#555]" id="taskPanelArrow">▸</span>
+      </div>
+      <div id="taskPanelBody">
+        <div id="taskEmpty" class="px-3 py-3 text-[11px] text-[#555] text-center">暂无等待任务</div>
+        <div id="taskList" class="overflow-y-auto" style="max-height:190px; display:none;"></div>
+        <div class="px-3 py-1.5 text-[9px] text-[#444] border-t border-[#1a1a1a] flex items-center justify-between">
+          <span>拖动排序,Agent 按顺序读取</span>
+          <button onclick="clearDoneTasks()" class="text-[#555] hover:text-[#ff6b6b] transition-colors bg-transparent border-0 cursor-pointer" title="清空已完成任务">清空已完成</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 右侧:拓扑图 -->
+  <aside class="w-64 flex flex-col gap-0 p-0 overflow-y-auto flex-shrink-0 select-none bg-[#0d0d0d] " style="padding: 12px;">
+
+    <!-- Agent 节点 -->
+    <div class="rounded-xl bg-[#141414] border border-[#222222]">
+      <div class="flex items-center gap-2 px-3 py-2.5 border-b border-[#1f1f1f]">
+        <div class="w-1.5 h-1.5 rounded-full bg-[#666]" id="agentDot"></div>
+        <span class="text-xs font-medium text-[#ccc]">上游 Agent</span>
+        <span class="ml-auto text-[10px] text-[#555] font-mono" id="agentProto">MCP/SSE</span>
+      </div>
+      <div class="px-3 py-2 space-y-1.5 text-xs">
+        <div class="flex justify-between"><span class="text-[#888]">状态</span><span class="flex items-center gap-1.5"><span class="text-[9px] text-[#fbbf24] bg-[#1a1a1a] px-1.5 py-0.5 rounded hidden" id="agentUnread">未读消息 0</span><span class="text-[#ddd]" id="agent状态">待接入</span></span></div>
+        <div class="flex justify-between"><span class="text-[#888]">配对码</span><span class="font-mono text-[#ededed] font-semibold tracking-wider bg-[#1a1a1a] px-1.5 py-0.5 rounded" id="pairCode">------</span></div>
+        <div class="flex justify-between"><span class="text-[#888]">设备</span><span class="text-[#ddd] truncate max-w-[120px]" id="agentDevice">-</span></div>
+        <div class="flex justify-between"><span class="text-[#888]">平台</span><span class="text-[#ddd]" id="agentPlatform">-</span></div>
+      </div>
+      <div class="flex gap-1.5 px-3 py-2 border-t border-[#1f1f1f]">
+        <button class="flex-1 text-xs py-1 rounded-lg bg-[#222] text-[#ededed] hover:bg-[#2a2a2a] transition-all font-medium" onclick="copyPairCode()" title="复制配对码(发给智能体)">复制配对码</button>
+        <button class="text-xs py-1 px-2 rounded-lg bg-[#1a1a1a] text-[#777] hover:text-[#fca5a5] transition-all" onclick="disconnectAgent()" title="断开当前 Agent 连接">断开</button>
+        <button class="text-xs py-1 px-2 rounded-lg bg-[#1a1a1a] text-[#777] hover:text-[#ededed] transition-all" onclick="refreshPairCode()" title="刷新配对码">刷新</button>
+      </div>
+    </div>
+
+    <!-- 连接线 Agent → Relay -->
+    <div class="relative flex items-center justify-center" style="height: 32px;">
+      <div class="absolute w-px h-full bg-[#333]"></div>
+      <span class="relative text-[10px] text-[#555] font-mono bg-[#0d0d0d] px-2 z-10" id="agentRelayLatency">-- ms</span>
+    </div>
+
+    <!-- Relay 节点 -->
+    <div class="rounded-xl bg-[#141414] border border-[#222222]">
+      <div class="flex items-center gap-2 px-3 py-2.5 border-b border-[#1f1f1f]">
+        <div class="w-1.5 h-1.5 rounded-full bg-[#666]" id="relayDot"></div>
+        <div class="w-1.5 h-1.5 rounded-full hidden" id="relayAgentDot" style="background: #3b82f6;"></div>
+        <span class="text-xs font-medium text-[#ccc]">中转服务器</span>
+        <span class="ml-auto text-[10px] text-[#555] font-mono"><span id="relayProtoSSE">SSE</span> + <span id="relayProtoWSS">WSS</span></span>
+      </div>
+      <div class="px-3 py-2 space-y-1.5 text-xs">
+        <div class="flex justify-between"><span class="text-[#888]">地址</span><span class="text-[#ddd] font-mono text-[11px] truncate max-w-[140px]" id="relayUrl">-</span></div>
+        <div class="flex justify-between"><span class="text-[#888]">连接</span><span class="text-[#ddd]" id="relayStatus">未连接</span></div>
+        <div class="flex justify-between"><span class="text-[#888]">平台</span><span class="text-[#ddd]" id="relayPlatform">-</span></div>
+      </div>
+      <div class="flex gap-1.5 px-3 py-2 border-t border-[#1f1f1f]">
+        <button class="flex-1 text-xs py-1 rounded-lg bg-[#222] text-[#ededed] hover:bg-[#2a2a2a] transition-all font-medium" onclick="toggleConnect()" id="connectBtn" title="连接或断开中继服务器">连接</button>
+        <button class="text-xs py-1 px-2 rounded-lg bg-[#1a1a1a] text-[#ff6b6b] hover:bg-[#2a1212] transition-all" onclick="cancelCommand()" title="停止当前正在执行的命令（kill 活动进程）">⏹ 停止</button>
+        <button class="text-xs py-1 px-2 rounded-lg bg-[#1a1a1a] text-[#777] hover:text-[#ededed] transition-all" onclick="configRelay()" title="配置中继服务器">配置</button>
+      </div>
+    </div>
+
+    <!-- 连接线 Relay → Client -->
+    <div class="relative flex items-center justify-center" style="height: 32px;">
+      <div class="absolute w-px h-full bg-[#333]"></div>
+      <span class="relative text-[10px] text-[#555] font-mono bg-[#0d0d0d] px-2 z-10" id="relayClientLatency">-- ms</span>
+    </div>
+
+    <!-- Client 节点 -->
+    <div class="rounded-xl bg-[#141414] border border-[#222222]">
+      <div class="flex items-center gap-2 px-3 py-2.5 border-b border-[#1f1f1f]">
+        <div class="w-1.5 h-1.5 rounded-full bg-[#666]" id="clientDot"></div>
+        <span class="text-xs font-medium text-[#aaa]">客户端(本地电脑)</span>
+        <span class="ml-auto text-[10px] text-[#555] font-mono" id="clientProto">-</span>
+      </div>
+      <div class="px-3 py-2 space-y-1.5 text-xs">
+        <div class="flex justify-between"><span class="text-[#888]">工作目录</span><span class="text-[#ddd] font-mono text-[11px] truncate max-w-[130px]" id="workDir">未设置</span></div>
+        <div class="flex justify-between"><span class="text-[#888]">平台</span><span class="text-[#ddd]" id="client平台">-</span></div>
+        <div class="flex justify-between"><span class="text-[#888]">主机名</span><span class="text-[#ddd] truncate max-w-[120px]" id="client主机名">-</span></div>
+      </div>
+      <div class="px-3 py-2 border-t border-[#1f1f1f]">
+        <div class="text-[11px] font-medium text-[#777] mb-2">权限模式</div>
+        <div class="flex gap-1.5">
+          <div class="flex-1 flex items-center gap-1.5 px-2 py-1.5 rounded-lg cursor-pointer transition-all bg-[#222] border border-[#333]" id="permSuper" onclick="setPermission('super')" title="超级模式是授权智能体拥有所有权限">
+            <div class="w-1.5 h-1.5 rounded-full bg-[#ededed]"></div>
+            <div class="text-[11px] font-medium text-[#ededed]">超级模式</div>
+          </div>
+          <div class="flex-1 flex items-center gap-1.5 px-2 py-1.5 rounded-lg cursor-pointer transition-all bg-[#1a1a1a] border border-[#222]" id="permWorkspace" onclick="setPermission('workspace')" title="工作区模式是限制智能体仅在工作区活动">
+            <div class="w-1.5 h-1.5 rounded-full bg-[#444]"></div>
+            <div class="text-[11px] font-medium text-[#666]">工作区模式</div>
+          </div>
+        </div>
+      </div>
+      <div class="px-3 py-2 text-[10px] text-[#444] text-center border-t border-[#1a1a1a]">工作区在左侧边栏管理</div>
+    </div>
+  </aside>
+</div>
+
+<script>
+
+
+
+
+
+
+console.log("JS loaded OK");
+
+// ─── 启动画面:进度条动画 + 页面就绪后淡出 ───
+(function() {
+  var splash = document.getElementById('splashScreen');
+  if (!splash) return;
+  var bar = document.getElementById('splashBar');
+  var pct = 0;
+  // 进度条模拟加载(页面实际渲染完成后淡出)
+  var iv = setInterval(function() {
+    pct = Math.min(pct + 8 + Math.random() * 12, 92);
+    if (bar) bar.style.width = pct + '%';
+  }, 120);
+  function hide() {
+    clearInterval(iv);
+    if (bar) bar.style.width = '100%';
+    setTimeout(function() {
+      splash.style.opacity = '0';
+      setTimeout(function() { splash.style.display = 'none'; }, 380);
+    }, 150);
+  }
+  // 页面完全加载后淡出(最多等 4 秒兑底)
+  if (document.readyState === 'complete') { setTimeout(hide, 300); }
+  else window.addEventListener('load', function() { setTimeout(hide, 300); });
+  setTimeout(hide, 4000); // 兑底:4 秒后必隐
+})();
+
+
+
+const state = { connected: false, pairCode: '------', ws: null, sessions: [], currentSessionId: null, deviceId: null, deviceName: '', cwd: '', logs: {}, platform: '', hostname: '', workDir: '', relayKey: '', permission: 'workspace', pendingMessages: [], agentHostname: '', agentPlatform: '', autoReconnect: false, reconnectTimer: null };
+
+// ─── 任务分割块状态(日志区按任务切块:当前块钉顶闪烁,历史块折叠可展开) ───
+var taskBlocks = {};           // msgId -> { el, head, body, state, msgId, num }
+var taskBlockSeq = 0;          // 任务块序号(任务 1 / 任务 2 ...)
+var activeTaskBlock = null;    // 当前活跃任务块(日志写入目标 + 钉顶闪烁)
+function logTarget() {
+  // 日志写入目标:有活跃任务块时写入块 body,否则写入 sessionLog 根
+  return (activeTaskBlock && activeTaskBlock.body) || document.getElementById('sessionLog');
+}
+function createTaskBlock(msgId, text, urgent) {
+  if (!msgId) msgId = 'local_' + (++taskBlockSeq) + '_' + Date.now();
+  if (taskBlocks[msgId]) return taskBlocks[msgId];
+  // 新任务块出现 → 旧活跃块折叠
+  if (activeTaskBlock) collapseTaskBlock(activeTaskBlock, false);
+  var log = document.getElementById('sessionLog');
+  var block = document.createElement('div');
+  block.className = 'task-split active' + (urgent ? ' urgent' : '');
+  block.dataset.t = 'all';
+  taskBlockSeq++;
+  var num = taskBlockSeq;
+  block.innerHTML =
+    '<div class="task-split-head">' +
+      '<span class="task-split-num">任务 ' + num + '</span>' +
+      '<span class="task-split-name">' + esc(text || '(未命名任务)') + '</span>' +
+      '<span class="task-split-status">• 待执行</span>' +
+      '<span class="task-split-arrow">▾</span>' +
+    '</div>' +
+    '<div class="task-split-body"></div>';
+  var head = block.querySelector('.task-split-head');
+  var body = block.querySelector('.task-split-body');
+  head.addEventListener('click', function() { toggleTaskBlock(block); });
+  log.appendChild(block);
+  var obj = { el: block, head: head, body: body, state: 'pending', msgId: msgId, num: num };
+  taskBlocks[msgId] = obj;
+  activeTaskBlock = obj;
+  scrollLog();
+  return obj;
+}
+function setTaskBlockState(obj, state) {
+  if (!obj || !obj.el) return;
+  obj.state = state;
+  // 状态类:控制闪烁/配色差异(pending=闪烁待执行, running=稳定执行中, done=完成)
+  obj.el.classList.remove('status-pending', 'status-running', 'status-done');
+  obj.el.classList.add('status-' + state);
+  var st = obj.el.querySelector('.task-split-status');
+  if (state === 'running') {
+    obj.el.classList.add('active');
+    if (st) st.textContent = '▌ 执行中';
+  } else if (state === 'done') {
+    obj.el.classList.remove('active');
+    if (st) st.textContent = '✓ 完成';
+  } else if (state === 'pending') {
+    obj.el.classList.add('active');
+    if (st) st.textContent = '• 待执行';
+  }
+}
+function collapseTaskBlock(obj, keepActiveInfo) {
+  if (!obj || !obj.el) return;
+  obj.el.classList.add('collapsed');
+  obj.el.classList.remove('active');
+  if (activeTaskBlock === obj) activeTaskBlock = null;
+}
+function expandTaskBlock(obj) {
+  if (!obj || !obj.el) return;
+  obj.el.classList.remove('collapsed');
+  if (obj.state === 'running' || obj.state === 'pending') {
+    obj.el.classList.add('active');
+    if (activeTaskBlock !== obj) activeTaskBlock = obj;
+  }
+}
+function toggleTaskBlock(block) {
+  var collapsed = block.classList.contains('collapsed');
+  var obj = null;
+  for (var k in taskBlocks) { if (taskBlocks[k].el === block) { obj = taskBlocks[k]; break; } }
+  if (!obj) return;
+  if (collapsed) expandTaskBlock(obj); else collapseTaskBlock(obj);
+  scrollLog();
+}
+function clearTaskBlocks() {
+  taskBlocks = {};
+  taskBlockSeq = 0;
+  activeTaskBlock = null;
+}
+
+// 协议标签中文映射: TCP 直连
+function protoLabel(p) {
+  if (!p) return 'TCP 直连';
+  var s = String(p).toLowerCase();
+  if (s.indexOf('tcp') >= 0 || s.indexOf('reverse') >= 0) return 'TCP 直连';
+  if (s.indexOf('wss') >= 0 || s.indexOf('ws') >= 0) return '公网';
+  return p;
+}
+// 链路健康状态:relay=off/connecting/on, agent=off/on
+var health = { relay: 'off', agent: 'off', relayLatency: 0, agentLatency: 0 };
+var isDesktopApp = typeof window.pywebview !== 'undefined';
+
+var _lastLogText = '';
+var _lastLogTime = 0;
+var _lastLogType = '';
+var autoScroll = true;
+var logFilter = 'all';
+var MAX_LOG_ITEMS = 1000;   // 日志/卡片条数上限,超出自动裁剪最早的,防止长会话卡顿
+function trimLog() {
+  var log = document.getElementById('sessionLog');
+  if (!log) return;
+  // 统计总条目数:任务块 body 内的日志也计入
+  function countEntries(root) {
+    var n = 0;
+    for (var i = 0; i < root.children.length; i++) {
+      var el = root.children[i];
+      if (el.classList && el.classList.contains('task-split')) {
+        var body = el.querySelector('.task-split-body');
+        if (body) n += countEntries(body);
+      } else {
+        n += 1;
+      }
+    }
+    return n;
+  }
+  function removeOldest(root, depth) {
+    for (var i = 0; i < root.children.length; i++) {
+      var el = root.children[i];
+      if (el.classList && el.classList.contains('task-split')) {
+        var body = el.querySelector('.task-split-body');
+        if (body && countEntries(body) > 0 && removeOldest(body, depth + 1)) return true;
+      } else {
+        root.removeChild(el);
+        return true;
+      }
+    }
+    return false;
+  }
+  while (countEntries(log) > MAX_LOG_ITEMS) {
+    if (!removeOldest(log, 0)) break;
+  }
+}
+var BADGES = {
+  cmd:    ['CMD',  '#3b82f6', 'text-[#93c5fd]'],
+  out:    ['OUT',  '#71717a', 'text-[#d4d4d4]'],
+  err:    ['ERR',  '#ff6b6b', 'text-[#ff8a8a]'],
+  info:   ['INF',  '#64748b', 'text-[#a1a1aa]'],
+  done:   ['OK',   '#4ade80', 'text-[#4ade80]'],
+  file:   ['FILE', '#a78bfa', 'text-[#c4b5fd]'],
+  code:   ['CODE', '#e0a458', 'text-[#e0a458]'],
+  status: ['SYS',  '#5b6472', 'text-[#8a8a8a]'],
+  action: ['AGT',  '#4ade80', 'text-[#4ade80]'],
+  msg:    ['MSG',  '#fbbf24', 'text-[#fcd34d]'],
+  warn:   ['WARN', '#fbbf24', 'text-[#fcd34d]'],
+};
+function logCat(type) {
+  if (type === 'cmd' || type === 'out') return 'cmd';
+  if (type === 'file' || type === 'code') return 'file';
+  if (type === 'err' || type === 'warn') return 'err';
+  if (type === 'msg') return 'msg';
+  return 'sys';
+}
+function scrollLog() {
+  if (!autoScroll) return;
+  var log = document.getElementById('sessionLog');
+  if (log) log.scrollTop = log.scrollHeight;
+}
+function toggleAutoScroll() {
+  autoScroll = !autoScroll;
+  var btn = document.getElementById('autoScrollBtn');
+  if (btn) { btn.textContent = autoScroll ? '⤓ 滚动' : '⏸ 暂停'; btn.style.color = autoScroll ? '#555' : '#fbbf24'; }
+  if (autoScroll) scrollLog();
+}
+function clearLog() {
+  var log = document.getElementById('sessionLog');
+  log.innerHTML = '';
+  clearTaskBlocks();
+  addLog('status', '日志已清空');
+}
+function setLogFilter(f) {
+  logFilter = f;
+  var btns = document.querySelectorAll('.lg-fbtn');
+  for (var i = 0; i < btns.length; i++) btns[i].classList.toggle('active', btns[i].dataset.f === f);
+  var log = document.getElementById('sessionLog');
+  for (var j = 0; j < log.children.length; j++) {
+    var el = log.children[j];
+    // 任务块永远显示(其内部日志属于任务视图,不参与过滤)
+    if (el.classList && el.classList.contains('task-split')) { el.style.display = ''; continue; }
+    var t = el.dataset.t;
+    el.style.display = (f === 'all' || t === f) ? '' : 'none';
+  }
+  scrollLog();
+}
+function addLog(type, text, extraCls) {
+  var _now = Date.now();
+  // 去重:3 秒内同类型同文本跳过(但连接/断开事件除外)
+  if (text === _lastLogText && type === _lastLogType && _now - _lastLogTime < 3000
+      && !text.includes('中转服务器')) return;
+  _lastLogText = text;
+  _lastLogTime = _now;
+  _lastLogType = type;
+  var log = logTarget();
+  var entry = document.createElement('div');
+  entry.className = 'entry flex items-start gap-2 py-[3px] animate-slide-up' + (extraCls ? ' ' + extraCls : '');
+  entry.dataset.t = logCat(type);
+
+  var now = new Date();
+  var time = now.toTimeString().slice(0, 8);
+  var b = BADGES[type] || BADGES.info;
+  var multi = type === 'out' || type === 'err' || type === 'file' || type === 'code';
+  var body = multi
+    ? '<pre class="' + b[2] + '" style="margin:0;font-family:inherit;white-space:pre-wrap;word-break:break-all">' + esc(text) + '</pre>'
+    : '<span class="' + b[2] + '">' + esc(text) + '</span>';
+  entry.innerHTML = '<span class="lg-time pt-px">' + time + '</span><span class="lg-badge" style="color:' + b[1] + ';border-color:' + b[1] + '44;">' + b[0] + '</span><span class="flex-1 min-w-0">' + body + '</span>';
+  if (logFilter !== 'all' && entry.dataset.t !== logFilter) entry.style.display = 'none';
+  log.appendChild(entry);
+  scrollLog();
+  trimLog();
+}
+function addCmdBlock(cmd, meta, p) {
+  var log = logTarget();
+  var block = document.createElement('div');
+  block.className = 'entry cmd-block animate-slide-up';
+  block.dataset.t = 'cmd';
+  var now = new Date();
+  var time = now.toTimeString().slice(0, 8);
+  var ok = !p || p.exitCode === 0;
+  var dur = null;
+  if (meta && meta.duration != null) dur = meta.duration;
+  else if (p && p.duration != null) dur = p.duration;
+  var durText = dur != null ? Math.round(dur) + 'ms' : '';
+  var exitText = (p && p.exitCode !== undefined) ? (ok ? '✓ ' : '✗ ') + p.exitCode : '';
+
+  // 按 kind 区分卡片:脚本/命令/环境/文件
+  var kind = (p && p.kind) || (meta && meta.kind) || '';
+  var badge = ['CMD', '#3b82f6'];
+  var prefix = '$ ';
+  var kindLabel = '';
+  if (kind === 'exec_script') { badge = ['SCRIPT', '#e0a458']; prefix = ''; }
+  else if (kind === 'get_environment') { badge = ['ENV', '#a78bfa']; prefix = ''; }
+  else if (kind === 'read_file') { badge = ['FILE', '#a78bfa']; prefix = '📖 '; }
+  else if (kind === 'write_file') { badge = ['FILE', '#a78bfa']; prefix = '✏️ '; }
+  else if (kind === 'custom') { badge = ['CUST', '#4ade80']; prefix = '⚙ '; }
+  else if (kind === 'project_status') { badge = ['📦', '#4ade80']; prefix = ''; }
+  else if (kind === 'codegraph_index') { badge = ['🧠', '#a78bfa']; prefix = ''; }
+  // 脚本语言标签
+  if (p && p.language) kindLabel = '<span class="text-[9px] text-[#888] border border-[#333] rounded px-1 flex-shrink-0">' + esc(p.language) + '</span>';
+
+  var title = document.createElement('div');
+  title.className = 'flex items-center gap-2 px-1.5 py-1 rounded cursor-pointer hover:bg-[#161616] transition-colors';
+  title.innerHTML =
+    '<span class="lg-time">' + time + '</span>' +
+    '<span class="lg-badge" style="color:' + badge[1] + ';border-color:' + badge[1] + '44;">' + badge[0] + '</span>' +
+    kindLabel +
+    '<span class="text-[#93c5fd] font-medium flex-1 min-w-0 truncate">' + prefix + esc(cmd || '') + '</span>' +
+    (durText ? '<span class="text-[9px] text-[#666] font-mono flex-shrink-0">' + durText + '</span>' : '') +
+    (exitText ? '<span class="text-[10px] font-mono flex-shrink-0 ' + (ok ? 'text-[#4ade80]' : 'text-[#ff6b6b]') + '">' + exitText + '</span>' : '') +
+    '<span class="text-[#555] text-[9px] flex-shrink-0">▾</span>';
+  var body = document.createElement('div');
+  body.className = 'cmd-body pl-[62px] pb-1 space-y-0.5';
+  var lines = [];
+  if (meta && meta.cwd) lines.push('<div class="text-[10px] text-[#777]">📁 ' + esc(meta.cwd) + '</div>');
+
+  // 环境档案:可读的结构化展示(而非裸 JSON)
+  if (kind === 'get_environment' && p && p.data) {
+    lines.push(renderEnvProfile(p.data));
+  } else {
+    if (p && p.stdout) lines.push('<pre class="text-[#d4d4d4] whitespace-pre-wrap break-all">' + esc(p.stdout) + '</pre>');
+    if (p && p.stderr) lines.push('<pre class="text-[#ff8a8a] whitespace-pre-wrap break-all">' + esc(p.stderr) + '</pre>');
+  }
+  if (p && p.killed) lines.push('<div class="text-[10px] text-[#fbbf24]">⏱ 超时被终止</div>');
+  if (lines.length === 0) lines.push('<div class="text-[10px] text-[#555]">(无输出)</div>');
+  body.innerHTML = lines.join('');
+  title.addEventListener('click', function() {
+    var hidden = body.style.display === 'none';
+    body.style.display = hidden ? '' : 'none';
+    var arrow = title.lastElementChild;
+    if (arrow) arrow.textContent = hidden ? '▾' : '▸';
+  });
+  block.appendChild(title);
+  block.appendChild(body);
+  if (logFilter !== 'all' && logFilter !== 'cmd') block.style.display = 'none';
+  log.appendChild(block);
+  scrollLog();
+  trimLog();
+}
+
+// ── 执行中卡片(Agent 开始一个工具时显示)──
+function startCmdBlock(cmdText, cmdObj) {
+  var log = logTarget();
+  var block = document.createElement('div');
+  block.className = 'entry cmd-block animate-slide-up';
+  block.dataset.t = 'cmd';
+  var now = new Date();
+  var time = now.toTimeString().slice(0, 8);
+  var t = cmdObj && cmdObj.type ? cmdObj.type : 'action';
+  var badge = ['ACT', '#3b82f6'];
+  if (t === 'execute' || t === 'exec') badge = ['CMD', '#3b82f6'];
+  else if (t === 'exec_script') badge = ['SCRIPT', '#e0a458'];
+  else if (t === 'read') badge = ['FILE', '#a78bfa'];
+  else if (t === 'write') badge = ['FILE', '#a78bfa'];
+  else if (t === 'custom') badge = ['CUST', '#4ade80'];
+  else if (t === 'session') badge = ['SESS', '#e0a458'];
+  else if (t === 'task') badge = ['TASK', '#fbbf24'];
+
+  var title = document.createElement('div');
+  title.className = 'flex items-center gap-2 px-1.5 py-1 rounded cursor-pointer hover:bg-[#161616] transition-colors';
+  title.innerHTML =
+    '<span class="lg-time">' + time + '</span>' +
+    '<span class="lg-badge" style="color:' + badge[1] + ';border-color:' + badge[1] + '44;">' + badge[0] + '</span>' +
+    '<span class="spin-icon" style="width:10px;height:10px;border:1.5px solid #555;border-top-color:' + badge[1] + ';border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0;display:inline-block;"></span>' +
+    '<span class="text-[#93c5fd] font-medium flex-1 min-w-0 truncate">' + esc(cmdText || '(执行中)') + '</span>' +
+    '<span class="text-[9px] text-[#fbbf24] flex-shrink-0 blink-fast">▌运行中</span>' +
+    '<span class="text-[#555] text-[9px] flex-shrink-0">▾</span>';
+
+  var body = document.createElement('div');
+  body.className = 'cmd-body pl-[62px] pb-1 space-y-0.5';
+  body.innerHTML = '<div class="text-[10px] text-[#888]">⏳ 正在执行,等待结果...</div>';
+
+  title.addEventListener('click', function() {
+    var hidden = body.style.display === 'none';
+    body.style.display = hidden ? '' : 'none';
+    var arrow = title.lastElementChild;
+    if (arrow) arrow.textContent = hidden ? '▾' : '▸';
+  });
+
+  block.appendChild(title);
+  block.appendChild(body);
+  if (logFilter !== 'all' && logFilter !== 'cmd') block.style.display = 'none';
+  log.appendChild(block);
+  scrollLog();
+  trimLog();
+  // 兑底:若 10 秒内未收到 result,标记为"已结束",避免永远停在"运行中"
+  var pending = { el: block, title: title, body: body, cmdText: cmdText, time: time, startTime: Date.now(), _timeout: null };
+  pending._timeout = setTimeout(function() {
+    // 如果卡片还在且仍显示"运行中",改成"已结束(无返回)"
+    if (pending.el && pending.el.isConnected) {
+      var runEl = pending.title.querySelector('.blink-fast');
+      if (runEl) {
+        runEl.textContent = '已结束';
+        runEl.style.color = '#888';
+        runEl.classList.remove('blink-fast');
+        pending.body.innerHTML = '<div class="text-[10px] text-[#777]">⚠ 此操作无返回结果(或已完成),未展示输出。</div>';
+      }
+      // 停止转圈图标(修复:超时后 spin-icon 仍在无限旋转)
+      var spinEl = pending.title.querySelector('.spin-icon');
+      if (spinEl) {
+        spinEl.style.animation = 'none';
+        spinEl.style.borderColor = '#555';
+        spinEl.style.borderTopColor = '#555';
+        spinEl.style.opacity = '0.35';
+      }
+    }
+  }, 10000);
+  return pending;
+}
+
+// 把"执行中"卡片更新为"完成"态
+function finalizeCmdBlock(pending, p) {
+  if (!pending || !pending.el) return;
+  // 收到结果,取消兑底超时
+  if (pending._timeout) { clearTimeout(pending._timeout); pending._timeout = null; }
+  var ok = p.exitCode === 0;
+  var dur = p.duration != null ? Math.round(p.duration) + 'ms' : '';
+  var exitText = (p.exitCode !== undefined) ? (ok ? '✓ ' : '✗ ') + p.exitCode : '';
+  var kind = p.kind || '';
+  var badge = ['CMD', '#3b82f6'];
+  var prefix = '$ ';
+  var kindLabel = '';
+  if (kind === 'exec_script') { badge = ['SCRIPT', '#e0a458']; prefix = ''; }
+  else if (kind === 'get_environment') { badge = ['ENV', '#a78bfa']; prefix = ''; }
+  else if (kind === 'read_file') { badge = ['FILE', '#a78bfa']; prefix = '📖 '; }
+  else if (kind === 'write_file') { badge = ['FILE', '#a78bfa']; prefix = '✏️ '; }
+  else if (kind === 'custom') { badge = ['CUST', '#4ade80']; prefix = '⚙ '; }
+  else if (kind === 'project_status') { badge = ['📦', '#4ade80']; prefix = ''; }
+  else if (kind === 'codegraph_index') { badge = ['🧠', '#a78bfa']; prefix = ''; }
+  if (p.language) kindLabel = '<span class="text-[9px] text-[#888] border border-[#333] rounded px-1 flex-shrink-0">' + esc(p.language) + '</span>';
+
+  var cmdText = p.command || pending.cmdText || '';
+  pending.title.innerHTML =
+    '<span class="lg-time">' + (pending.time || new Date().toTimeString().slice(0, 8)) + '</span>' +
+    '<span class="lg-badge" style="color:' + badge[1] + ';border-color:' + badge[1] + '44;">' + badge[0] + '</span>' +
+    kindLabel +
+    '<span class="text-[#93c5fd] font-medium flex-1 min-w-0 truncate">' + prefix + esc(cmdText) + '</span>' +
+    (dur ? '<span class="text-[9px] text-[#666] font-mono flex-shrink-0">' + dur + '</span>' : '') +
+    (exitText ? '<span class="text-[10px] font-mono flex-shrink-0 ' + (ok ? 'text-[#4ade80]' : 'text-[#ff6b6b]') + '">' + exitText + '</span>' : '') +
+    '<span class="text-[#555] text-[9px] flex-shrink-0">▾</span>';
+  pending.title.onclick = function() {
+    var hidden = pending.body.style.display === 'none';
+    pending.body.style.display = hidden ? '' : 'none';
+    var arrow = pending.title.lastElementChild;
+    if (arrow) arrow.textContent = hidden ? '▾' : '▸';
+  };
+  var lines = [];
+  if (p.cwd) lines.push('<div class="text-[10px] text-[#777]">📁 ' + esc(p.cwd) + '</div>');
+  if (kind === 'get_environment' && p.data) {
+    lines.push(renderEnvProfile(p.data));
+  } else {
+    if (p.stdout) lines.push('<pre class="text-[#d4d4d4] whitespace-pre-wrap break-all">' + esc(p.stdout) + '</pre>');
+    if (p.stderr) lines.push('<pre class="text-[#ff8a8a] whitespace-pre-wrap break-all">' + esc(p.stderr) + '</pre>');
+  }
+  if (p.killed) lines.push('<div class="text-[10px] text-[#fbbf24]">⏱ 超时被终止</div>');
+  if (lines.length === 0) lines.push('<div class="text-[10px] text-[#555]">(无输出)</div>');
+  pending.body.innerHTML = lines.join('');
+  scrollLog();
+}
+
+// ── 长任务进度弹窗(如 CodeGraph 索引)──
+var __progressEl = null;
+function showIndexProgress(p) {
+  if (!p) return;
+  var percent = p.percent != null ? Math.max(0, Math.min(100, p.percent)) : 0;
+  var phase = p.phase || '';
+  var text = p.text || '正在处理...';
+  var detail = p.detail || '';
+  // 创建弹窗(首次)
+  if (!__progressEl || !document.body.contains(__progressEl)) {
+    __progressEl = document.createElement('div');
+    __progressEl.id = 'indexProgress';
+    __progressEl.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:99990;background:#1a1a1a;border:1px solid #444;border-radius:14px;padding:22px 26px;min-width:380px;max-width:560px;box-shadow:0 8px 40px rgba(0,0,0,.6);text-align:center;';
+    __progressEl.innerHTML =
+      '<div style="font-size:14px;font-weight:600;color:#ededed;margin-bottom:4px;font-family:Inter,sans-serif;">🧠 正在建立代码索引</div>' +
+      '<div style="font-size:11px;color:#888;margin-bottom:14px;font-family:Noto Sans SC,sans-serif;">大项目索引可能需要几分钟,请稍候...</div>' +
+      '<div style="font-size:12px;color:#4ade80;margin-bottom:8px;font-family:Noto Sans SC,sans-serif;min-height:16px;font-weight:600;" id="ipPhase">正在准备...</div>' +
+      '<div style="width:100%;height:8px;background:#222;border-radius:4px;overflow:hidden;">' +
+      '  <div id="ipBar" style="width:0%;height:100%;background:linear-gradient(90deg,#4ade80,#3b82f6);border-radius:4px;transition:width .3s ease;"></div>' +
+      '</div>' +
+      '<div style="margin-top:8px;font-size:11px;color:#666;font-family:Noto Sans SC,sans-serif;"><span id="ipPct">0</span>%</div>' +
+      '<div style="margin-top:10px;font-size:11px;color:#93c5fd;font-family:monospace;min-height:16px;word-break:break-all;max-height:60px;overflow-y:auto;text-align:left;background:#0d0d0d;border:1px solid #1f1f1f;border-radius:6px;padding:6px 8px;" id="ipDetail"></div>';
+    document.body.appendChild(__progressEl);
+  }
+  var bar = document.getElementById('ipBar');
+  var pctEl = document.getElementById('ipPct');
+  var phaseEl = document.getElementById('ipPhase');
+  var detailEl = document.getElementById('ipDetail');
+  if (bar) bar.style.width = percent + '%';
+  if (pctEl) pctEl.textContent = percent;
+  if (phaseEl) phaseEl.textContent = text;
+  // 文件级明细:显示"正在处理哪个文件/哪块代码"
+  if (detailEl && detail) {
+    detailEl.textContent = detail;
+  }
+  // 完成/失败 → 短暂停留后关闭
+  if (phase === 'done' || percent >= 100) {
+    setTimeout(function() {
+      if (__progressEl && document.body.contains(__progressEl)) {
+        __progressEl.style.transition = 'opacity .3s';
+        __progressEl.style.opacity = '0';
+        setTimeout(function() {
+          if (__progressEl && __progressEl.parentNode) __progressEl.parentNode.removeChild(__progressEl);
+          __progressEl = null;
+        }, 320);
+      }
+    }, 1500);
+  }
+}
+
+// 环境档案 → 结构化 HTML(分组展示,IDE 风格)
+function renderEnvProfile(d) {  if (!d || typeof d !== 'object') return '';
+  var html = '';
+  var sec = function(title, rows) {
+    if (!rows.length) return '';
+    var r = rows.map(function(x) { return '<div class="flex gap-2 items-baseline"><span class="text-[#888] w-28 flex-shrink-0">' + esc(x[0]) + '</span><span class="text-[#d4d4d4] break-all">' + esc(x[1]) + '</span></div>'; }).join('');
+    return '<div class="mt-1"><div class="text-[10px] text-[#a78bfa] font-medium mb-0.5">' + esc(title) + '</div>' + r + '</div>';
+  };
+  var s = (d.system || {});
+  html += sec('系统', [
+    ['主机名', s.hostname || ''], ['平台', (s.platform || '') + ' ' + (s.arch || '')],
+    ['CPU', (s.cpus || '') + ' 核'], ['用户', s.user || ''], ['主目录', s.homedir || '']
+  ]);
+  var tools = d.tools || {};
+  var toolList = Object.keys(tools).filter(function(k){ return tools[k]; });
+  html += sec('可用工具', [['', toolList.join(', ')]]);
+  var w = d.workspace || {};
+  html += sec('工作区', [
+    ['模式', w.permission || ''], ['当前目录', w.currentCwd || ''], ['默认目录', w.defaultWorkDir || '']
+  ]);
+  // 完整 JSON(可折叠展开)
+  html += '<div class="text-[10px] text-[#555] mt-1 cursor-pointer" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display===\'none\'?\'\':\'none\'">▸ 查看完整 JSON</div>';
+  html += '<pre style="display:none" class="text-[#777] text-[10px] whitespace-pre-wrap break-all">' + esc(JSON.stringify(d, null, 2)) + '</pre>';
+  return html;
+}
+function esc(t) { var d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
+function copyLog() {
+  var log = document.getElementById('sessionLog');
+  var text = '';
+  for (var i = 0; i < log.children.length; i++) {
+    text += log.children[i].textContent + '\n';
+  }
+  navigator.clipboard.writeText(text).then(function() {
+    addLog('info', '日志已复制到剪贴板');
+  }).catch(function() {
+    // fallback
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    addLog('info', '日志已复制');
+  });
+}
+
+var REPO_URL = 'https://github.com/ideasir/yunqiao';
+var SKILL_RAW_URL = 'https://raw.githubusercontent.com/ideasir/yunqiao/main/skills/yunqiao-usage/SKILL.md';
+function copyTextToClipboard(text, okLog) {
+  navigator.clipboard.writeText(text).then(function() {
+    addLog('done', okLog);
+  }).catch(function() {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    addLog('done', okLog + '(fallback)');
+  });
+}
+function copyRepoUrl() {
+  copyTextToClipboard(REPO_URL, '仓库地址已复制: ' + REPO_URL);
+}
+function copySkillInfo() {
+  var msg = '请为我安装"云桥"技能(yunqiao-usage):\n\n' +
+    '技能内容地址(SKILL.md):\n' + SKILL_RAW_URL + '\n\n' +
+    '请阅读并遵循该技能的使用规范(连接云桥后先调用 get_client_messages 读取客户端消息、按优先级处理用户指令等)。';
+  copyTextToClipboard(msg, '技能安装信息已复制,请粘贴发给智能体');
+}
+
+// 用户主动建立 CodeGraph 索引(点击顶部工具条按钮)
+function userBuildIndex() {
+  var path = state.workDir || '';
+  if (!path) { addLog('err', '请先设置/选择工作区'); return; }
+  // 先查询当前工作区索引状态,动态生成建议
+  var statusLine = '';
+  var doAsk = function() {
+    var help =
+      '🧠 建立代码索引(CodeGraph)\n\n' +
+      '【用途】为当前工作区生成语义代码图谱:\n' +
+      '  · 跳转函数/类定义、查看调用关系\n' +
+      '  · 跨文件理解代码、查询影响范围\n\n' +
+      '【何时需要】\n' +
+      '  · 项目文件较多(数百+)时,普通 grep 难理解全局\n' +
+      '  · 经常改代码、需要知道改动影响的模块\n' +
+      '  · 接手中大型项目想快速上手\n\n' +
+      (statusLine ? statusLine + '\n' : '') +
+      '【耗时】小项目秒级,大项目几分钟\n' +
+      '【当前工作区】' + path + '\n\n' +
+      '确认开始建立索引?';
+    nativeConfirm('建立代码索引', help).then(function(ok) {
+      if (!ok) { addLog('info', '已取消建立索引'); return; }
+      if (window.pywebview && window.pywebview.api && window.pywebview.api.build_index) {
+        window.pywebview.api.build_index(path).then(function(r) {
+          if (r && r.success) {
+            addLog('done', '✅ 代码索引建立完成: ' + ((r.message || '').slice(0, 80)));
+          } else {
+            addLog('err', '建立索引失败: ' + ((r && r.error) || '未知错误'));
+          }
+        }).catch(function(e) { addLog('err', '建立索引失败: ' + ((e && e.message) || e || '')); });
+      } else {
+        addLog('err', '浏览器模式不支持建立索引,请使用桌面客户端');
+      }
+    });
+  };
+  // 若后端支持则先查状态,再弹框;否则直接弹框
+  if (window.pywebview && window.pywebview.api && window.pywebview.api.get_codegraph_status) {
+    window.pywebview.api.get_codegraph_status(path).then(function(s) {
+      if (s && s.success) { statusLine = '【当前状态】' + (s.advice || ''); }
+      doAsk();
+    }).catch(function() { doAsk(); });
+  } else {
+    doAsk();
+  }
+}
+
+function sendCommand() {
+  var input = document.getElementById('cmdInput');
+  var raw = input.value.trim();
+  if (!raw) return;
+  input.value = '';
+  // 以 ! 开头 = 紧急消息(去掉前缀发送,最高优先级)
+  var urgent = raw.charAt(0) === '!';
+  var text = urgent ? raw.slice(1).trim() : raw;
+  if (!text) return;
+  if (window.pywebview && window.pywebview.api && window.pywebview.api.send_message) {
+    // 桌面模式:消息进中继队列,Agent 读取后收到回执
+    window.pywebview.api.send_message(text, urgent).then(function(r) {
+      if (r && r.success && r.msgId) {
+        state.pendingMessages.push({ id: r.msgId, text: text, urgent: urgent, done: false });
+        createTaskBlock(r.msgId, text, urgent);
+        updateAgentBadge();
+        renderTaskPanel();
+        addLog(urgent ? 'warn' : 'msg', (urgent ? '⚠️ [紧急] → 任务: ' : '→ 任务: ') + text, 'ts-user-msg');
+      } else {
+        addLog('err', '任务发布失败: ' + ((r && r.error) || '未知错误'));
+      }
+    }).catch(function() { addLog('err', '任务发布失败'); });
+  } else if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+    // 浏览器直连模式:直接发给中继(无回执跟踪)
+    var rid = 'msg_' + Date.now();
+    state.ws.send(JSON.stringify({ type: 'agent_message', requestId: rid, text: text, urgent: urgent }));
+    createTaskBlock(rid, text, urgent);
+    addLog(urgent ? 'warn' : 'msg', (urgent ? '⚠️ [紧急] → 任务: ' : '→ 任务: ') + text, 'ts-user-msg');
+  } else {
+    addLog('err', '未连接服务器');
+  }
+}
+function updateAgentBadge() {
+  var el = document.getElementById('agentUnread');
+  if (!el) return;
+  var n = state.pendingMessages.filter(function(m) { return !m.done; }).length;
+  if (n > 0) {
+    el.textContent = '未读消息 ' + n;
+    el.classList.remove('hidden');
+  } else {
+    el.classList.add('hidden');
+  }
+}
+
+// ─── 任务队列面板 ────────────────────────────────
+var panelOpen = false;      // 抽屉是否展开
+var panelManual = false;    // 用户是否手动控制过(手动后不自动打扰)
+var dragMsgIdx = -1;
+function fmtTime(t) {
+  var d = new Date(t);
+  function p(n) { return (n < 10 ? '0' : '') + n; }
+  return p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+}
+function toggleTaskPanel() {
+  panelManual = true;
+  panelOpen = !panelOpen;
+  applyPanelState();
+}
+function applyPanelState() {
+  var panel = document.getElementById('taskPanel');
+  var arrow = document.getElementById('taskPanelArrow');
+  if (!panel) return;
+  if (panelOpen) {
+    panel.classList.add('expanded');
+    if (arrow) arrow.textContent = '▾';
+  } else {
+    panel.classList.remove('expanded');
+    if (arrow) arrow.textContent = '▸';
+  }
+}
+function renderTaskPanel() {
+  var list = document.getElementById('taskList');
+  var empty = document.getElementById('taskEmpty');
+  var count = document.getElementById('taskPanelCount');
+  var dot = document.getElementById('taskPanelDot');
+  var n = state.pendingMessages.filter(function(m) { return !m.done; }).length;
+  count.textContent = n;
+  if (dot) dot.style.background = n > 0 ? '#fbbf24' : '#333';
+  empty.style.display = state.pendingMessages.length === 0 ? '' : 'none';
+  list.style.display = state.pendingMessages.length === 0 ? 'none' : '';
+  list.innerHTML = '';
+  state.pendingMessages.forEach(function(m, idx) {
+    var row = document.createElement('div');
+    if (m.done) {
+      // 已完成:划掉 + 灰色 + ✓,保留删除
+      row.className = 'flex items-start gap-2 px-3 py-1.5 border-b border-[#1a1a1a] opacity-45 text-xs';
+      row.innerHTML =
+        '<span class="text-[9px] text-[#555] font-mono pt-0.5 flex-shrink-0">' + fmtTime(m.doneTime || m.time) + '</span>' +
+        '<span class="flex-1 break-all leading-tight text-[#777] line-through">' + esc(m.text) + '</span>' +
+        '<span class="text-[10px] text-[#4ade80] flex-shrink-0" title="已完成">✓</span>' +
+        '<button class="op-del text-[10px] text-[#666] hover:text-[#ff6b6b] leading-none flex-shrink-0" title="删除">✕</button>';
+      row.querySelector('.op-del').addEventListener('click', function(e) {
+        e.stopPropagation();
+        deleteTask(parseInt(row.dataset.idx, 10));
+      });
+    } else {
+      row.className = 'flex items-start gap-2 px-3 py-1.5 border-b border-[#1a1a1a] hover:bg-[#181818] cursor-grab text-xs';
+      row.draggable = true;
+      row.innerHTML =
+        '<span class="text-[9px] text-[#555] font-mono pt-0.5 flex-shrink-0">' + fmtTime(m.time) + '</span>' +
+        '<span class="' + (m.urgent ? 'text-[#ff6b6b]' : 'text-[#ddd]') + ' flex-1 break-all leading-tight">' +
+        (m.urgent ? '⚠️ ' : '') + esc(m.text) + '</span>' +
+        '<span class="flex flex-col gap-1 flex-shrink-0 ml-0.5">' +
+        '<button class="op-edit text-[10px] text-[#777] hover:text-[#ededed] leading-none" title="编辑">✎</button>' +
+        '<button class="op-del text-[10px] text-[#777] hover:text-[#ff6b6b] leading-none" title="删除">✕</button>' +
+        '</span>';
+      row.querySelector('.op-edit').addEventListener('click', function(e) {
+        e.stopPropagation();
+        editTask(parseInt(row.dataset.idx, 10));
+      });
+      row.querySelector('.op-del').addEventListener('click', function(e) {
+        e.stopPropagation();
+        deleteTask(parseInt(row.dataset.idx, 10));
+      });
+      row.addEventListener('dragstart', function(e) {
+        if (e.target && e.target.closest && e.target.closest('button')) { e.preventDefault(); return; }
+        dragMsgIdx = parseInt(this.dataset.idx, 10);
+        this.style.opacity = '0.4';
+        if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+      });
+      row.addEventListener('dragend', function() { this.style.opacity = ''; });
+      row.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+      });
+      row.addEventListener('drop', function(e) {
+        e.preventDefault();
+        reorderTask(dragMsgIdx, parseInt(this.dataset.idx, 10));
+      });
+    }
+    row.dataset.idx = idx;
+    list.appendChild(row);
+  });
+  // 抽屉自动行为:无待读任务收起,有则展开(用户手动控制过则不打扰)
+  if (n === 0) panelOpen = false;
+  else if (!panelManual) panelOpen = true;
+  applyPanelState();
+}
+// 原生确认框:桌面端走 pywebview(tkinter 原生),浏览器端降级 confirm
+function nativeConfirm(title, message) {
+  if (window.pywebview && window.pywebview.api && window.pywebview.api.confirm_dialog) {
+    return window.pywebview.api.confirm_dialog(title, message);
+  }
+  return Promise.resolve(window.confirm(message));
+}
+function deleteTask(idx) {
+  var m = state.pendingMessages[idx];
+  if (!m) return;
+  nativeConfirm('删除任务', '删除这条任务?').then(function(ok) {
+    if (!ok) return;
+    state.pendingMessages.splice(idx, 1);
+    renderTaskPanel();
+    updateAgentBadge();
+    syncDelete([m.id]);
+    addLog('info', '任务已删除');
+  });
+}
+function clearDoneTasks() {
+  state.pendingMessages = state.pendingMessages.filter(function(m) { return !m.done; });
+  renderTaskPanel();
+  updateAgentBadge();
+  addLog('info', '已完成任务已清空');
+}
+function syncDelete(ids) {
+  if (window.pywebview && window.pywebview.api && window.pywebview.api.delete_messages) {
+    window.pywebview.api.delete_messages(ids);
+  }
+}
+function editTask(idx) {
+  var m = state.pendingMessages[idx];
+  var list = document.getElementById('taskList');
+  if (!m || !list) return;
+  var row = list.children[idx];
+  if (!row) return;
+  row.draggable = false;
+  row.className = row.className.replace('cursor-grab', '');
+  row.innerHTML = '<input type="text" class="flex-1 bg-transparent border border-[#333] rounded px-1.5 py-0.5 text-xs text-[#ededed] outline-none" value="' + esc(m.text) + '" />';
+  var input = row.querySelector('input');
+  input.focus();
+  input.select();
+  var done = false;
+  function commit(save) {
+    if (done) return;
+    done = true;
+    if (save && input.value.trim()) {
+      var newText = input.value.trim();
+      m.text = newText;
+      syncEdit(m.id, newText);
+      addLog('info', '任务已编辑');
+    }
+    renderTaskPanel();
+  }
+  input.addEventListener('keydown', function(e) {
+    e.stopPropagation();
+    if (e.key === 'Enter') commit(true);
+    else if (e.key === 'Escape') commit(false);
+  });
+  input.addEventListener('blur', function() { commit(true); });
+}
+function syncEdit(id, text) {
+  if (window.pywebview && window.pywebview.api && window.pywebview.api.edit_message) {
+    window.pywebview.api.edit_message(id, text);
+  }
+}
+function reorderTask(from, to) {
+  if (from === to || from < 0) return;
+  var arr = state.pendingMessages;
+  var item = arr.splice(from, 1)[0];
+  arr.splice(to, 0, item);
+  renderTaskPanel();
+  syncTaskOrder();
+  addLog('info', '任务已重排,Agent 将按新顺序读取');
+}
+function syncTaskOrder() {
+  var ids = state.pendingMessages.map(function(m) { return m.id; });
+  if (window.pywebview && window.pywebview.api && window.pywebview.api.reorder_messages) {
+    window.pywebview.api.reorder_messages(ids);
+  }
+}
+
+function getMcpBase() {
+  var relayUrl = document.getElementById('relayUrl').textContent;
+  var base = relayUrl;
+  if (base.startsWith('wss://')) base = 'https://' + base.slice(6);
+  else if (base.startsWith('ws://')) base = 'http://' + base.slice(5);
+  else if (!base.startsWith('http')) base = 'https://' + base;
+  return base.replace(/\/device$/, '').replace(/\/$/, '');
+}
+function fetchMcpTicket(forceRefresh) {
+  // 缓存 MCP ticket,避免每次复制都作废旧地址
+  if (!forceRefresh && state.mcpTicket && state.mcpUrl) {
+    return Promise.resolve(state.mcpUrl);
+  }
+  if (window.pywebview && window.pywebview.api && window.pywebview.api.get_mcp_ticket) {
+    var attempt = function(retried) {
+      return window.pywebview.api.get_mcp_ticket().then(function(r) {
+        if (r && r.success && r.ticket) {
+          state.mcpTicket = r.ticket;
+          state.mcpUrl = getMcpBase() + '/mcp/' + r.ticket;
+          return state.mcpUrl;
+        }
+        // 首次失败可能正逢 WSS 重连间隙：重试一次
+        if (!retried) {
+          return new Promise(function(resolve) {
+            setTimeout(function() { resolve(attempt(true)); }, 600);
+          });
+        }
+        throw new Error((r && r.error) || '获取 MCP 地址失败');
+      }).catch(function(e) {
+        if (!retried) {
+          return new Promise(function(resolve) {
+            setTimeout(function() { resolve(attempt(true)); }, 600);
+          });
+        }
+        throw e;
+      });
+    };
+    return attempt(false);
+  }
+  return Promise.reject(new Error('API 不可用'));
+}
+function refreshMcpTicket() {
+  state.mcpTicket = '';
+  state.mcpUrl = '';
+  fetchMcpTicket(true).then(function(url) {
+    addLog('info', 'MCP 地址已刷新(旧地址已作废)');
+  }).catch(function(e) {
+    addLog('err', '刷新 MCP 地址失败: ' + e.message);
+  });
+}
+function copyPairCode() {
+  // 复制动态 MCP 地址 + 配对码（ticket 即连接凭证，无需密钥）
+  fetchMcpTicket(false).then(function(url) {
+    copyTextToClipboard('云桥地址: ' + url + '\n配对码: ' + state.pairCode, '已复制:动态 MCP 地址 + 配对码');
+  }).catch(function(e) { addLog('err', '获取 MCP 地址失败: ' + e.message); });
+}
+function copyMcpUrl() {
+  // 单独复制动态 MCP 地址
+  fetchMcpTicket(false).then(function(url) {
+    copyTextToClipboard(url, '动态 MCP 地址已复制');
+  }).catch(function(e) { addLog('err', '获取 MCP 地址失败: ' + e.message); });
+}
+function disconnectAgent() {
+  // 断开当前 Agent 连接(清理 SSE 传输)
+  if (window.pywebview && window.pywebview.api && window.pywebview.api.disconnect_agent) {
+    window.pywebview.api.disconnect_agent().then(function(r) {
+      if (r && r.success) {
+        addLog('done', 'Agent 连接已断开');
+      } else {
+        addLog('err', '断开失败: ' + ((r && r.error) || '未知错误'));
+      }
+    }).catch(function() { addLog('err', '断开 Agent 失败'); });
+  } else {
+    addLog('err', '当前环境不支持断开 Agent');
+  }
+}
+function refreshPairCode() {
+  if (window.pywebview && window.pywebview.api && window.pywebview.api.refresh_pair_code) {
+    window.pywebview.api.refresh_pair_code().then(function(result) {
+      state.pairCode = result.pairCode;
+      var el = document.getElementById('pairCode'); if (el) el.textContent = state.pairCode;
+      addLog('done', '配对码已推送至中转服务器');
+      addLog('info', '请复制并发送给智能体:云桥地址 ' + (document.getElementById('relayUrl')?.textContent || '') + ' 配对码 ' + state.pairCode);
+    });
+  } else {
+    state.pairCode = String(100000 + Math.floor(Math.random() * 900000));
+    var el = document.getElementById('pairCode'); if (el) el.textContent = state.pairCode;
+    addLog('done', '配对码已推送至中转服务器');
+    addLog('info', '请复制并发送给智能体:云桥地址 ' + (document.getElementById('relayUrl')?.textContent || '') + ' 配对码 ' + state.pairCode);
+  }
+}
+
+function openSessionModal() {
+  document.getElementById('modalSessionName').value = '工作区 ' + (state.sessions.length + 1);
+  document.getElementById('modalSessionDir').value = state.workDir || state.homeDir || 'C:\\Users\\Administrator';
+  var overlay = document.getElementById('sessionModal');
+  var content = document.getElementById('sessionModalContent');
+  overlay.style.opacity = '1';
+  overlay.style.pointerEvents = 'auto';
+  setTimeout(function() {
+    content.style.transform = 'scale(1) translateY(0)';
+    content.style.opacity = '1';
+  }, 10);
+  setTimeout(function() {
+    document.getElementById('modalSessionName').focus();
+    document.getElementById('modalSessionName').select();
+  }, 100);
+}
+function closeSessionModal() {
+  var overlay = document.getElementById('sessionModal');
+  var content = document.getElementById('sessionModalContent');
+  content.style.transform = 'scale(0.9) translateY(20px)';
+  content.style.opacity = '0';
+  setTimeout(function() {
+    overlay.style.opacity = '0';
+    overlay.style.pointerEvents = 'none';
+  }, 200);
+}
+function createSession() {
+  openSessionModal();
+}
+
+
+function saveSessionModal() {
+  var name = document.getElementById('modalSessionName').value.trim() || '工作区';
+  var dir = document.getElementById('modalSessionDir').value.trim() || state.homeDir || 'C:\\Users\\Administrator';
+  // 桌面端:调后端 API 创建会话(影响 Agent 实际工作目录)
+  if (window.pywebview && window.pywebview.api && window.pywebview.api.create_session) {
+    window.pywebview.api.create_session(dir, name).then(function(r) {
+      if (r && r.success) {
+        loadSessions();
+        addLog('done', '工作区已创建: ' + name);
+      } else {
+        addLog('err', '创建工作区失败: ' + ((r && r.error) || ''));
+      }
+    }).catch(function(e) { addLog('err', '创建工作区失败: ' + ((e && e.message) || e || '未知错误')); });
+  } else {
+    // 浏览器直连:纯前端模式
+    var id = 's_' + Date.now().toString(36);
+    state.sessions.push({ id: id, name: name, workDir: dir, cwd: dir, isDefault: state.sessions.length === 0 });
+    state.workDir = dir;
+    if (!state.currentSessionId) state.currentSessionId = id;
+    renderSidebar(); updateStatus();
+    addLog('info', '工作区已创建: ' + name + ' (浏览器模式)');
+  }
+  // 关闭弹窗
+  var overlay = document.getElementById('sessionModal');
+  var content = document.getElementById('sessionModalContent');
+  content.style.transform = 'scale(0.9) translateY(20px)';
+  content.style.opacity = '0';
+  setTimeout(function() {
+    overlay.style.opacity = '0';
+    overlay.style.pointerEvents = 'none';
+  }, 200);
+}
+function browseSessionDir(e) {
+  var input = document.getElementById('modalSessionDir');
+  var btn = e ? e.target : null;
+  if (btn) { btn.textContent = '...'; btn.style.opacity = '0.5'; }
+  // 桌面端:用原生"选择文件夹"对话框(tkinter),返回完整路径
+  if (window.pywebview && window.pywebview.api && window.pywebview.api.browse_folder) {
+    window.pywebview.api.browse_folder().then(function(path) {
+      if (path) input.value = path;
+      if (btn) { btn.textContent = '浏览'; btn.style.opacity = '1'; }
+    }).catch(function() {
+      if (btn) { btn.textContent = '浏览'; btn.style.opacity = '1'; }
+      input.focus();
+      input.select();
+    });
+    return;
+  }
+  // 浏览器直连模式:showDirectoryPicker(只能拿到目录名)或手动输入
+  if (window.showDirectoryPicker) {
+    window.showDirectoryPicker().then(function(handle) {
+      document.getElementById('modalSessionDir').value = handle.name;
+      if (btn) { btn.textContent = '浏览'; btn.style.opacity = '1'; }
+    }).catch(function() {
+      if (btn) { btn.textContent = '浏览'; btn.style.opacity = '1'; }
+      input.focus();
+      input.select();
+    });
+    return;
+  }
+  // 降级:手动输入
+  if (btn) { btn.textContent = '浏览'; btn.style.opacity = '1'; }
+  input.focus();
+  input.select();
+}
+function refreshSessions() { addLog('info', '工作区列表已刷新'); }
+var ctxSessionId = null;
+function renderSidebar() {
+  var list = document.getElementById('sidebarList');
+  if (!list) return;
+  list.innerHTML = '';
+  // 默认会话置顶
+  var sorted = [].concat(state.sessions);
+  sorted.sort(function(a, b) {
+    if (a.id === state.currentSessionId) return -1;
+    if (b.id === state.currentSessionId) return 1;
+    return 0;
+  });
+  sorted.forEach(function(s) {
+    var isDefault = s.id === state.currentSessionId;
+    var item = document.createElement('div');
+    item.className = 'flex items-center justify-center rounded-lg cursor-pointer text-xs font-semibold transition-all relative';
+    if (isDefault) {
+      item.style.cssText = 'background:#222;color:#4ade80;width:26px;height:26px;border:1px solid #4ade80;';
+    } else {
+      item.style.cssText = 'color:#666;width:26px;height:26px;background:transparent;';
+    }
+    item.title = (s.name || 'unnamed') + ' - ' + (s.workDir || '');
+    item.textContent = (s.name || '?').slice(0, 2);
+    item.style.fontSize = '10px';
+    item.onmouseover = function() { if (!isDefault) { this.style.background = '#1a1a1a'; this.style.color = '#aaa'; } };
+    item.onmouseout = function() { if (!isDefault) { this.style.background = 'transparent'; this.style.color = '#666'; } };
+    item.onclick = function(e) {
+      e.stopPropagation();
+      setDefaultSession(s.id);  // 左键单击 = 切换为该工作区
+    };
+    item.oncontextmenu = function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      ctxSessionId = s.id;
+      var menu = document.getElementById('ctxMenu');
+      // 动态判断该工作区能否建立索引:查 codegraph 状态,决定菜单项灰/可点
+      var idxItem = document.getElementById('ctxIndexItem');
+      if (idxItem) {
+        idxItem.style.opacity = '0.4';
+        idxItem.style.pointerEvents = 'none';
+        idxItem.textContent = '🧠 建立索引...';
+      }
+      if (window.pywebview && window.pywebview.api && window.pywebview.api.get_codegraph_status) {
+        window.pywebview.api.get_codegraph_status(s.workDir || '').then(function(st) {
+          if (idxItem) {
+            var state = st && st.state;
+            if (st && st.success && state === 'ready') {
+              idxItem.style.opacity = '1';
+              idxItem.style.pointerEvents = 'auto';
+              idxItem.textContent = '🧠 建立索引';
+              idxItem.title = (st.advice || '') + '(' + (st.fileCount || 0) + ' 个代码文件)';
+            } else if (st && st.success && state === 'indexed') {
+              idxItem.style.opacity = '0.6';
+              idxItem.style.pointerEvents = 'none';
+              idxItem.textContent = '✅ 已建立索引';
+              idxItem.title = st.advice || '';
+            } else {
+              // no_code / not_installed → 灰置不可点,悬停显示原因
+              idxItem.style.opacity = '0.4';
+              idxItem.style.pointerEvents = 'none';
+              idxItem.textContent = '🧠 暂不能建立索引';
+              idxItem.title = (st && st.advice) || '该工作区无法建立索引';
+            }
+          }
+        }).catch(function() {
+          if (idxItem) {
+            idxItem.style.opacity = '1';
+            idxItem.style.pointerEvents = 'auto';
+            idxItem.textContent = '🧠 建立索引';
+          }
+        });
+      } else {
+        if (idxItem) {
+          idxItem.style.opacity = '1';
+          idxItem.style.pointerEvents = 'auto';
+          idxItem.textContent = '🧠 建立索引';
+        }
+      }
+      menu.style.display = 'block';
+      menu.style.left = '48px';
+      menu.style.top = Math.min(e.clientY, window.innerHeight - 80) + 'px';
+    };
+    list.appendChild(item);
+  });
+}
+// 点击其他地方关闭菜单
+document.addEventListener('click', function() {
+  var menu = document.getElementById('ctxMenu');
+  if (menu) menu.style.display = 'none';
+});
+function ctxSetDefault() {
+  var menu = document.getElementById('ctxMenu');
+  menu.style.display = 'none';
+  if (ctxSessionId) setDefaultSession(ctxSessionId);
+}
+function ctxDelete() {
+  var menu = document.getElementById('ctxMenu');
+  menu.style.display = 'none';
+  if (ctxSessionId) closeSession(ctxSessionId);
+}
+// 右键菜单:建立索引(复用顶部工具条的逻辑,带用途说明)
+function ctxBuildIndex() {
+  var menu = document.getElementById('ctxMenu');
+  menu.style.display = 'none';
+  if (!ctxSessionId) return;
+  var s = state.sessions.find(function(x) { return x.id === ctxSessionId; });
+  var path = (s && s.workDir) || '';
+  if (!path) { addLog('err', '工作区路径未知'); return; }
+  // 先切到该工作区,再走统一的建索引流程
+  var goBuild = function() {
+    state.workDir = path;
+    userBuildIndex();
+  };
+  if (s && s.id !== state.currentSessionId) {
+    setDefaultSession(s.id);
+    setTimeout(goBuild, 400);
+  } else {
+    goBuild();
+  }
+}
+
+
+function setDefaultSession(id) {
+  var s = state.sessions.find(function(s) { return s.id === id; });
+  if (window.pywebview && window.pywebview.api && window.pywebview.api.switch_session) {
+    window.pywebview.api.switch_session(id).then(function(r) {
+      if (r && r.success) {
+        loadSessions();
+        addLog('done', '工作区已切换: ' + (s ? s.name : id));
+      } else {
+        addLog('err', '切换工作区失败: ' + ((r && r.error) || ''));
+      }
+    }).catch(function(e) { addLog('err', '切换工作区失败: ' + ((e && e.message) || e || '未知错误')); });
+  } else {
+    state.currentSessionId = id;
+    renderSidebar();
+    updateStatus();
+    addLog('status', '默认工作区已切换: ' + (s ? s.name : id));
+  }
+}
+function closeSession(id) {
+  nativeConfirm('关闭工作区', '确定关闭此工作区?').then(function(ok) {
+    if (!ok) return;
+    if (window.pywebview && window.pywebview.api && window.pywebview.api.close_session) {
+      // 桌面端:同步删除后端会话(否则刷新后会复活)
+      window.pywebview.api.close_session(id).then(function(r) {
+        if (r && r.success) {
+          loadSessions();
+          addLog('done', '工作区已关闭: ' + id);
+        } else {
+          addLog('err', '关闭工作区失败: ' + ((r && r.error) || ''));
+        }
+      }).catch(function(e) { addLog('err', '关闭工作区失败: ' + ((e && e.message) || e || '未知错误')); });
+    } else {
+      state.sessions = state.sessions.filter(function(s) { return s.id !== id; });
+      if (state.currentSessionId === id) { state.currentSessionId = state.sessions.length > 0 ? state.sessions[0].id : null; }
+      renderSidebar(); addLog('info', '工作区已关闭: ' + id);
+    }
+  });
+}
+
+function setPermission(type) {
+  state.permission = type;
+  // 同步到后端
+  if (window.pywebview && window.pywebview.api) {
+    window.pywebview.api.set_permission(type);
+  }
+  var superEl = document.getElementById('permSuper');
+  var workspaceEl = document.getElementById('permWorkspace');
+  if (type === 'super') {
+    superEl.style.cssText = 'background: #222; border: 1px solid #333;';
+    superEl.querySelector('div:first-child').className = 'w-1.5 h-1.5 rounded-full bg-[#ededed]';
+    superEl.querySelector('div:last-child').className = 'text-[11px] font-medium text-[#ededed]';
+
+    workspaceEl.style.cssText = 'background: #1a1a1a; border: 1px solid #222;';
+    workspaceEl.querySelector('div:first-child').className = 'w-1.5 h-1.5 rounded-full bg-[#444]';
+    workspaceEl.querySelector('div:last-child').className = 'text-[11px] font-medium text-[#666]';
+    addLog('info', '权限模式: 超级');
+  } else {
+    workspaceEl.style.cssText = 'background: #222; border: 1px solid #333;';
+    workspaceEl.querySelector('div:first-child').className = 'w-1.5 h-1.5 rounded-full bg-[#ededed]';
+    workspaceEl.querySelector('div:last-child').className = 'text-[11px] font-medium text-[#ededed]';
+
+    superEl.style.cssText = 'background: #1a1a1a; border: 1px solid #222;';
+    superEl.querySelector('div:first-child').className = 'w-1.5 h-1.5 rounded-full bg-[#444]';
+    superEl.querySelector('div:last-child').className = 'text-[11px] font-medium text-[#666]';
+    addLog('info', '权限模式: 工作区');
+  }
+}
+
+function updateStatus() {
+  var el;
+  el = document.getElementById('pairCode'); if (el) el.textContent = state.pairCode;
+  el = document.getElementById('deviceName'); if (el) el.textContent = state.deviceName || '-';
+  el = document.getElementById('client平台'); if (el) el.textContent = state.platform || '-';
+  el = document.getElementById('client主机名'); if (el) el.textContent = state.hostname || '-';
+  el = document.getElementById('workDir'); if (el) el.textContent = state.workDir || '未设置';
+  el = document.getElementById('currentCwd'); if (el) el.textContent = state.workDir || '~';
+
+}
+function handleBridge(action, data) {
+  if (action === 'log') {
+    var t = 'info';
+    var txt = data.text || '';
+    if (txt.indexOf('[通知]') !== -1) t = 'info';
+    else if (txt.indexOf('[重连]') !== -1 || txt.indexOf('连接失败') !== -1 || txt.indexOf('无法连接') !== -1 || txt.indexOf('连接被拒') !== -1) t = 'err';
+    else if (txt.indexOf('[执行]') !== -1 || txt.indexOf('[目录]') !== -1) t = 'out';
+    else if (txt.indexOf('[读取]') !== -1 || txt.indexOf('[新建]') !== -1 || txt.indexOf('[修改]') !== -1 || txt.indexOf('[写入]') !== -1) t = 'file';
+    else if (txt.indexOf('✅') !== -1) t = 'done';
+    else if (txt.indexOf('❌') !== -1 || txt.indexOf('失败') !== -1) t = 'err';
+    else if (txt.indexOf('⚠️') !== -1) t = 'warn';
+    else if (txt.charAt(0) === '[') t = 'action';
+    addLog(t, txt);
+  }
+  else if (action === 'messages_read') {
+    var ids = data.ids || [];
+    var marked = 0;
+    state.pendingMessages.forEach(function(m) {
+      if (ids.indexOf(m.id) !== -1 && !m.done) {
+        m.done = true;
+        m.doneTime = Date.now();
+        marked++;
+        // 任务面板消息划掉 + 任务分割块联动:Agent 已显式读取 → "执行中"(停止闪烁)
+        // 折叠时机仍以"新任务块出现"为触发
+        if (taskBlocks[m.id]) {
+          setTaskBlockState(taskBlocks[m.id], 'running');
+        }
+      }
+    });
+    if (marked > 0) {
+      updateAgentBadge();
+      renderTaskPanel();
+      addLog('done', '✅ Agent 已处理 ' + marked + ' 条消息(任务已划掉)');
+    }
+  }
+  else if (action === 'agent_keepalive') {
+    // Agent 心跳保活：收到此消息说明 Agent 还在线，保持灯亮
+    var s = document.getElementById('agent状态');
+    if (s && s.textContent !== '已配对') {
+      s.textContent = '已配对'; s.style.color = '#4ade80';
+    }
+    var agentDot = document.getElementById('agentDot');
+    if (agentDot) agentDot.className = 'w-1.5 h-1.5 rounded-full bg-[#4ade80]';
+    health.agent = 'on';
+    // 更新上次心跳时间
+    window.__yqAgentHeartbeat = Date.now();
+    // 如果之前有定时器要灭灯，取消它
+    if (window.__yqAgentHeartbeatTimer) {
+      clearTimeout(window.__yqAgentHeartbeatTimer);
+    }
+    // 30 秒内没收到心跳就灭灯
+    window.__yqAgentHeartbeatTimer = setTimeout(function() {
+      var ad = document.getElementById('agentDot');
+      if (ad) ad.className = 'w-1.5 h-1.5 rounded-full bg-[#666]';
+      var as = document.getElementById('agent状态');
+      if (as) { as.textContent = '待接入'; as.style.color = '#bbb'; }
+      health.agent = 'off';
+    }, 30000);
+  }
+  else if (action === 'agent_activity') {
+    renderActivityDots(data);
+  }
+  else if (action === 'sync_status') {
+    state.pairCode = data.pairCode || state.pairCode;
+    state.workDir = data.workDir || state.workDir;
+    state.sessions = data.sessions || state.sessions;
+    state.currentSessionId = data.currentSessionId || state.currentSessionId;
+    if (data.relayUrl) {
+      var el = document.getElementById('relayUrl');
+      if (el) el.textContent = data.relayUrl;
+    }
+    updateStatus();
+    renderSidebar();
+  }
+  else if (action === 'command_result') {
+    var p = data.payload;
+    if (p && p.exitCode !== undefined) {
+      // 如果前面有"进行中"卡片,更新它为完成态;否则直接新建
+      if (window.__pendingCmd && window.__pendingCmd.el) {
+        finalizeCmdBlock(window.__pendingCmd, p);
+        window.__pendingCmd = null;
+      } else {
+        addCmdBlock(p.command || '(命令)', p, p);
+      }
+    }
+  }
+  else if (action === 'agent_action') {
+    // 上游 Agent 行动轨迹 + 结果 → 日志显示（out 类型保留换行）
+    if (data && data.text) addLog('out', data.text);
+  }
+  else if (action === 'command_start') {
+    // Agent 开始执行某个工具 → 渲染"进行中"卡片
+    var c = data.cmd || {};
+    var cmdText = '';
+    var kind = c.type || '';
+    if (kind === 'execute_command' || kind === 'exec' || kind === 'execute') cmdText = c.command || '';
+    else if (kind === 'exec_script') cmdText = '脚本(' + (c.language || 'auto') + ')' + ((c.command || '').slice(0, 60) ? ': ' + c.command.slice(0, 60) : '');
+    else if (kind === 'read_file' || kind === 'read') cmdText = '📖 ' + (c.path || c.command || '');
+    else if (kind === 'write_file' || kind === 'write') cmdText = '✏️ ' + (c.path || c.command || '');
+    else if (kind === 'get_environment') cmdText = '环境档案';
+    else if (kind === 'custom') cmdText = '⚙ ' + (c.name || '');
+    else if (kind === 'session') cmdText = 'session ' + (c.op || '');
+    else if (kind === 'task') cmdText = '📦 ' + (c.command || '').slice(0, 60);
+    else cmdText = (kind || 'action') + ' ' + JSON.stringify(c).slice(0, 60);
+    window.__pendingCmd = startCmdBlock(cmdText, c);
+  }
+  else if (action === 'task_progress') {
+    // 长任务进度(如 CodeGraph 索引)→ 显示进度弹窗
+    showIndexProgress(data.progress || {});
+  }
+  else if (action === 'agent_status') {
+    var s = document.getElementById('agent状态');
+    if (data.status === 'connected') {
+      s.textContent = '已配对'; s.style.color = '#4ade80';
+      // 更新 Agent 设备信息（不碰中转服务器 UI）
+      var ad = document.getElementById('agentDevice');
+      if (ad && data.agentHostname) { ad.textContent = data.agentHostname; }
+      var ap = document.getElementById('agentPlatform');
+      if (ap && data.agentPlatform) { ap.textContent = data.agentPlatform; }
+      // 连接线延迟
+      var arl = document.getElementById('agentRelayLatency');
+      if (arl && data.latency) { arl.textContent = data.latency + ' ms'; arl.style.color = '#3b82f6'; }
+      var rp = document.getElementById('relayPlatform');
+      if (rp && data.relayPlatform) { rp.textContent = data.relayPlatform; }
+      var agentDot = document.getElementById('agentDot');
+      if (agentDot) agentDot.className = 'w-1.5 h-1.5 rounded-full bg-[#4ade80]';
+      var relayAgentDot = document.getElementById('relayAgentDot');
+      if (relayAgentDot) {
+        relayAgentDot.classList.remove('hidden');
+        relayAgentDot.className = 'w-1.5 h-1.5 rounded-full animate-pulse';
+        relayAgentDot.style.background = '#3b82f6';
+      }
+      // 点亮 Agent 协议标签
+      var ap = document.getElementById('agentProto');
+      if (ap) { ap.style.color = '#3b82f6'; ap.style.textShadow = '0 0 8px rgba(59,130,246,0.3)'; }
+      var rs = document.getElementById('relayProtoSSE');
+      if (rs) { rs.style.color = '#3b82f6'; rs.style.textShadow = '0 0 8px rgba(59,130,246,0.3)'; }
+      health.agent = 'on';
+      health.agentLatency = data.latency || 0;
+      state.agentHostname = data.agentHostname || '';
+      state.agentPlatform = data.agentPlatform || '';
+      updateHealth();
+    } else {
+      s.textContent = '待接入'; s.style.color = '#bbb';
+      // 只更新 Agent 区域，不碰中转服务器 UI
+      var agentDot = document.getElementById('agentDot');
+      if (agentDot) agentDot.className = 'w-1.5 h-1.5 rounded-full bg-[#666]';
+      var relayAgentDot = document.getElementById('relayAgentDot');
+      if (relayAgentDot) {
+        relayAgentDot.classList.add('hidden');
+        relayAgentDot.className = 'w-1.5 h-1.5 rounded-full hidden';
+      }
+      // 熄灭 Agent 协议标签
+      var ap = document.getElementById('agentProto');
+      if (ap) { ap.style.color = '#555'; ap.style.textShadow = ''; }
+      var rs2 = document.getElementById('relayProtoSSE');
+      if (rs2) { rs2.style.color = '#555'; rs2.style.textShadow = ''; }
+      health.agent = 'off';
+      health.agentLatency = 0;
+      updateHealth();
+    }
+  }
+  else if (action === 'relay_status') {
+    var dot = document.getElementById('relayDot');
+    var btn = document.getElementById('connectBtn');
+    var status = document.getElementById('relayStatus');
+    if (data.status === 'connected') {
+      dot.className = 'w-1.5 h-1.5 rounded-full bg-[#4ade80] animate-pulse';
+      status.textContent = '已连接';
+      status.style.color = '#4ade80';
+      // 只在首次连接时打日志（tcp_agent 每 5 秒推送延迟，避免日志反复刷）
+      if (!window.__yqRelayNotified) {
+        window.__yqRelayNotified = true;
+        addLog('done', '中转服务器已连接');
+        addLog('info', '配对码已推送: ' + state.pairCode + ',请复制发送给 Agent');
+      }
+      // 显示延迟
+      var rl = document.getElementById('relayLatency');
+      if (rl && typeof data.latency !== 'undefined') { rl.textContent = (data.latency || '<1') + ' ms'; rl.style.color = '#4ade80'; }
+      var rcl = document.getElementById('relayClientLatency');
+      if (rcl && typeof data.latency !== 'undefined') { rcl.textContent = (data.latency || '<1') + ' ms'; rcl.style.color = '#4ade80'; }
+      btn.textContent = '断开';
+      btn.style.background = '#7f1d1d';
+      btn.style.color = '#fca5a5';
+      var cd = document.getElementById('clientDot');
+      if (cd) cd.className = 'w-1.5 h-1.5 rounded-full bg-[#4ade80] animate-pulse';
+      // 客户端协议标签: 动态显示实际通道(TCP 直连)
+      var cp = document.getElementById('clientProto');
+      if (cp && data.proto) {
+        cp.textContent = protoLabel(data.proto);
+        cp.style.color = '#4ade80'; cp.style.textShadow = '0 0 8px rgba(74,222,128,0.3)';
+      } else if (cp) {
+        var pv = protoLabel(data.proto || 'tcp');
+        cp.textContent = pv;
+        cp.style.color = '#4ade80'; cp.style.textShadow = '0 0 8px rgba(74,222,128,0.3)';
+      }
+      // 中转服务器区域显示客户端实际走的主通道(TCP 直连)
+      var rw2 = document.getElementById('relayProtoWSS');
+      if (rw2) {
+        var p2 = protoLabel(data.proto || 'tcp');
+        rw2.textContent = p2;
+        rw2.style.color = '#4ade80'; rw2.style.textShadow = '0 0 8px rgba(74,222,128,0.3)';
+      }
+      // 连接时清除缓存的 MCP ticket(配对码可能变了,下次复制重新生成)
+      state.mcpTicket = '';
+      state.mcpUrl = '';
+      // 点亮客户端协议标签(动态显示实际通道: TCP 直连)
+      var cp = document.getElementById('clientProto');
+      if (cp) {
+        var proto = protoLabel((data && data.proto) ? data.proto : 'tcp');
+        cp.textContent = proto;
+        cp.style.color = '#4ade80'; cp.style.textShadow = '0 0 8px rgba(74,222,128,0.3)';
+      }
+      // 点亮 WSS 协议标签(relay 侧保持显示 SSE+WSS)
+      var rw = document.getElementById('relayProtoWSS');
+      if (rw) { rw.style.color = '#4ade80'; rw.style.textShadow = '0 0 8px rgba(74,222,128,0.3)'; }
+      health.relay = 'on';
+      health.relayLatency = data.latency || 0;
+      // 重置呼吸灯为全灰(等待服务器推送真实状态)
+      renderActivityDots({ connections: 0, maxConnections: 10 });
+      updateHealth();
+    } else if (data.status === 'connecting') {
+      // 连接中状态：只更新灯和文字，不弹断开弹窗
+      dot.className = 'w-1.5 h-1.5 rounded-full bg-[#fbbf24] animate-pulse';
+      status.textContent = '连接中';
+      status.style.color = '#fbbf24';
+      btn.textContent = '连接中…';
+      btn.style.background = '#222';
+      btn.style.color = '#ededed';
+      health.relay = 'connecting';
+    } else {
+      // 断开状态：显示未连接 + 断开弹窗
+      dot.className = 'w-1.5 h-1.5 rounded-full bg-[#666]';
+      status.textContent = '未连接';
+      status.style.color = '#bbb';
+      window.__yqRelayNotified = false;
+      // 修复断开后"连接"按钮无响应的问题：重置按钮状态和底层连接状态
+      btn.textContent = '连接';
+      btn.style.background = '#222';
+      btn.style.color = '#ededed';
+      btn.disabled = false;
+      health.relay = 'off';
+      // 清除 WSS 协议标签高亮
+      var rw = document.getElementById('relayProtoWSS');
+      if (rw) { rw.style.color = ''; rw.style.textShadow = ''; }
+      var cp = document.getElementById('clientProto');
+      if (cp) { cp.style.color = ''; cp.style.textShadow = ''; }
+      var cd = document.getElementById('clientDot');
+      if (cd) cd.className = 'w-1.5 h-1.5 rounded-full bg-[#666]';
+      var rad = document.getElementById('relayAgentDot');
+      if (rad) { rad.classList.add('hidden'); }
+      // 播放断开音效
+      try { playDisconnectSound(); } catch(e) {}
+      addLog('err', '⚠️ 中转服务器已断开');
+      // 显示断开弹窗："断开，正在重连"
+      showDisconnectPopup();
+      // 自动重连
+      if (state.autoReconnect) {
+        if (state.reconnectTimer) clearTimeout(state.reconnectTimer);
+        state.reconnectTimer = setTimeout(function() {
+          addLog('info', '[重连] 正在自动重连...');
+          toggleConnect();
+        }, 3000);
+      }
+      // 清除延迟显示
+      var rl = document.getElementById('relayLatency');
+      if (rl) { rl.textContent = '-- ms'; rl.style.color = '#555'; }
+      var rcl = document.getElementById('relayClientLatency');
+      if (rcl) { rcl.textContent = '-- ms'; rcl.style.color = '#555'; }
+      // 熄灭 WSS 协议标签
+      var rw = document.getElementById('relayProtoWSS');
+      if (rw) { rw.style.color = '#555'; rw.style.textShadow = ''; }
+      var cp = document.getElementById('clientProto');
+      if (cp) { cp.style.color = '#555'; cp.style.textShadow = ''; }
+      health.relay = 'off';
+      health.relayLatency = 0;
+      health.agent = 'off';
+      health.agentLatency = 0;
+      updateHealth();
+    }
+  }
+}
+function updateHealth() {
+  // 链路状态灯已替换为 DeepSeek logo,无需更新
+}
+function windowMinimize() {
+  if (window.pywebview && window.pywebview.api && window.pywebview.api.window_minimize) window.pywebview.api.window_minimize();
+}
+function windowClose() {
+  if (window.pywebview && window.pywebview.api && window.pywebview.api.window_close) window.pywebview.api.window_close();
+}
+// 标题栏拖拽由 pywebview 原生处理(.pywebview-drag-region class + easy_drag=False),
+// 仅限标题栏可拖,日志区等正文区域不受影响,可正常拖动选字。
+// 不再手动调 start_drag()--它会与原生 onBodyMouseDown 冲突,且曾导致全局鼠标被接管。
+function copyDiagInfo() {
+  var relayAddr = document.getElementById('relayUrl') ? document.getElementById('relayUrl').textContent : '-';
+  var relayState = health.relay === 'on' ? '已连接' : (health.relay === 'connecting' ? '连接中' : '未连接');
+  var agentState = health.agent === 'on' ? '已配对' : '待接入';
+  var lines = [
+    '云桥链路诊断 ' + new Date().toLocaleString(),
+    '客户端: ' + (state.hostname || '-') + ' / ' + (state.platform || '-') + ' 配对码:' + (state.pairCode || '-'),
+    '工作目录: ' + (state.workDir || '-'),
+    '中继: ' + relayState + (health.relayLatency ? ' ' + health.relayLatency + 'ms' : '') + ' ' + relayAddr,
+    'Agent: ' + agentState + (health.agentLatency ? ' ' + health.agentLatency + 'ms' : '') + ' ' + (state.agentHostname || '-') + ' / ' + (state.agentPlatform || '-'),
+  ];
+  copyTextToClipboard(lines.join('\n'), '链路诊断信息已复制');
+}
+// 标题栏活跃灯排:灯总数 = 该用户连接配额,亮 = Agent 当前真实并发活动
+// 语义:并发 = 运行中任务 + 挂起调用(不是连接数);空闲全灭,忙时快闪
+function renderActivityDots(a) {
+  var el = document.getElementById('activityDots');
+  if (!el) return;
+  a = a || {};
+  var running = a.runningTasks || 0;
+  var pending = a.pendingCalls || 0;
+  var count = Math.min(100, running + pending);
+  var html = '';
+  for (var i = 0; i < count; i++) {
+    var delay = Math.abs(i - (count-1)/2) * 40 + 'ms';
+    html += '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#4ade80;box-shadow:0 0 5px 1px rgba(74,222,128,.7);animation:pulse 1.5s ease-in-out infinite;animation-delay:' + delay + '"></span>';
+  }
+  el.innerHTML = html;
+  el.title = '并发: ' + count + ' (运行' + running + ' 挂起' + pending + ')';
+  // 没并发时宽度自适应
+  el.style.gap = count > 0 ? '2px' : '0';
+}
+
+// 从后端获取状态(pywebview API 可能延迟注入)
+// 注意:必须在全局作用域声明(saveSessionModal/setDefaultSession/closeSession 都会调用 loadSessions)
+function loadStatus() {
+  if (window.pywebview && window.pywebview.api) {
+    window.pywebview.api.get_status().then(function(s) {
+      state.pairCode = s.pairCode || state.pairCode;
+      state.deviceName = s.deviceName || '';
+      state.platform = s.platform || '';
+      state.hostname = s.hostname || '';
+      state.homeDir = s.homeDir || '';
+      // 更新中继地址显示
+      if (s && s.relayUrl) {
+        var el = document.getElementById('relayUrl');
+        if (el) el.textContent = s.relayUrl;
+      }
+      // 更新中继连接状态灯和文字
+      if (s && s.relayStatus) {
+        var dot = document.getElementById('relayDot');
+        var st = document.getElementById('relayStatus');
+        var btn = document.getElementById('connectBtn');
+        if (dot) {
+          if (s.relayStatus === '已连接') dot.className = 'w-1.5 h-1.5 rounded-full bg-[#4ade80] animate-pulse';
+          else if (s.relayStatus === '连接中') dot.className = 'w-1.5 h-1.5 rounded-full bg-[#fbbf24] animate-pulse';
+          else dot.className = 'w-1.5 h-1.5 rounded-full bg-[#666]';
+        }
+        if (st) {
+          st.textContent = s.relayStatus;
+          st.style.color = s.relayStatus === '已连接' ? '#4ade80' : (s.relayStatus === '连接中' ? '#fbbf24' : '#ddd');
+        }
+        if (btn) {
+          btn.textContent = s.relayStatus === '已连接' ? '断开' : '连接';
+          btn.style.background = s.relayStatus === '已连接' ? '#7f1d1d' : '#222';
+          btn.style.color = s.relayStatus === '已连接' ? '#fca5a5' : '#ededed';
+        }
+        // 更新客户端状态灯
+        if (s.relayStatus === '已连接') {
+          var cd = document.getElementById('clientDot');
+          if (cd) cd.className = 'w-1.5 h-1.5 rounded-full bg-[#4ade80] animate-pulse';
+          health.relay = 'on';
+        } else if (s.relayStatus === '连接中') {
+          health.relay = 'connecting';
+        } else {
+          health.relay = 'off';
+        }
+      }
+      // 用后端返回的活跃度快照刷新连接灯(主动拉取完底,不依赖推送)
+      if (s && s.activity) renderActivityDots({ connected: true, runningTasks: s.activity.runningTasks, pendingCalls: s.activity.pendingCalls });
+      updateStatus();
+      // 恢复未读消息队列(客户端重启后,服务器上还没被 Agent 读取的消息重新显示出来)
+      if (window.pywebview && window.pywebview.api && window.pywebview.api.get_pending_messages) {
+        window.pywebview.api.get_pending_messages().then(function(r) {
+          if (r && r.success && r.messages && r.messages.length > 0) {
+            r.messages.forEach(function(m) {
+              var exists = state.pendingMessages.some(function(p) { return p.id === m.id; });
+              if (!exists) {
+                state.pendingMessages.push({ id: m.id, text: m.text, urgent: m.urgent, time: m.time, done: false });
+                createTaskBlock(m.id, m.text, m.urgent);
+              }
+            });
+            updateAgentBadge();
+            renderTaskPanel();
+            addLog('info', '已恢复 ' + r.messages.length + ' 条未读任务');
+          }
+        });
+      }
+    });
+  } else {
+    setTimeout(loadStatus, 500);
+  }
+}
+// 从后端加载会话和工作区(pywebview API 可能延迟注入)
+function loadSessions() {
+  if (window.pywebview && window.pywebview.api) {
+    window.pywebview.api.get_sessions().then(function(data) {
+      if (data && data.sessions) {
+        state.sessions = data.sessions;
+        state.currentSessionId = data.currentId || '';
+        state.workDir = data.workDir || '';
+        updateStatus();
+        renderSidebar();
+      }
+    });
+  } else {
+    setTimeout(loadSessions, 500);
+  }
+}
+
+(function() {
+  updateStatus();
+  updateAgentBadge();
+  renderTaskPanel();
+  renderActivityDots({});
+  addLog('info', '欢迎使用云桥 MCP v2.2');
+  addLog('info', '工作区是持久的:文件存放在默认工作区,重开客户端不会丢失');
+  updateHealth();
+  setPermission('workspace');
+  setTimeout(loadStatus, 300);
+  setTimeout(loadSessions, 300);
+  // 连接灯完底轮询：每 3s 主动拉一次状态刷新活跃灯（推送丢失/卡死也能自愈）
+  setInterval(function() {
+    if (window.pywebview && window.pywebview.api && window.pywebview.api.get_status) {
+      window.pywebview.api.get_status().then(function(s) {
+        if (s && s.activity) renderActivityDots({ connected: true, runningTasks: s.activity.runningTasks, pendingCalls: s.activity.pendingCalls });
+      });
+    }
+  }, 3000);
+  // 日志滚动时标记活跃时间和计数，用于并发灯判断
+  window.__yqLogCount = 0;
+  window.__yqLogCountAtStart = 0;
+  var origAddLog = addLog;
+  addLog = function(t, txt) {
+    window.__yqLastLogAt = Date.now();
+    window.__yqLogCount = (window.__yqLogCount || 0) + 1;
+    origAddLog(t, txt);
+  };
+})();
+
+
+
+// 断开音效（使用 Web Audio API 生成蜂鸣声，无需外部文件）
+function playDisconnectSound() {
+  try {
+    var ctx = new (window.AudioContext || window.webkitAudioContext)();
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = 'square';
+    osc.frequency.value = 880;
+    gain.gain.setValueAtTime(0.3, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.3);
+    // 第二个短音
+    var osc2 = ctx.createOscillator();
+    var gain2 = ctx.createGain();
+    osc2.connect(gain2);
+    gain2.connect(ctx.destination);
+    osc2.type = 'square';
+    osc2.frequency.value = 660;
+    gain2.gain.setValueAtTime(0.3, ctx.currentTime + 0.4);
+    gain2.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.7);
+    osc2.start(ctx.currentTime + 0.4);
+    osc2.stop(ctx.currentTime + 0.7);
+  } catch(e) { /* 静默降级 */ }
+}
+// 断开弹窗
+var disconnectPopupTimer = null;
+function showDisconnectPopup() {
+  var el = document.getElementById('disconnectPopup');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'disconnectPopup';
+    el.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:99999;background:#1a1a1a;border:1px solid #ff6b6b;border-radius:14px;padding:24px 32px;box-shadow:0 8px 40px rgba(0,0,0,.8);text-align:center;animation:modalIn 0.3s ease;';
+    el.innerHTML = '<div style="font-size:28px;margin-bottom:8px;">🔌</div>' +
+      '<div style="font-size:15px;font-weight:600;color:#ff6b6b;margin-bottom:4px;">断开，正在重连</div>' +
+      '<div style="font-size:11px;color:#888;margin-bottom:14px;">' + (state.autoReconnect ? '正在自动重连...' : '请检查网络或手动重连') + '</div>' +
+      '<button onclick="closeDisconnectPopup()" style="font-size:11px;padding:6px 16px;border-radius:8px;background:#333;color:#ededed;border:0;cursor:pointer;">知道了</button>';
+    document.body.appendChild(el);
+  }
+  if (disconnectPopupTimer) clearTimeout(disconnectPopupTimer);
+  disconnectPopupTimer = setTimeout(closeDisconnectPopup, 8000);
+}
+function closeDisconnectPopup() {
+  var el = document.getElementById('disconnectPopup');
+  if (el) { el.style.opacity = '0'; el.style.transform = 'translate(-50%,-50%) scale(0.9)'; el.style.transition = 'all 0.2s ease'; setTimeout(function() { if (el.parentNode) el.parentNode.removeChild(el); }, 200); }
+  if (disconnectPopupTimer) { clearTimeout(disconnectPopupTimer); disconnectPopupTimer = null; }
+}
+function toggleConnect() {
+  health.relay = 'connecting';
+  // 立即更新状态灯和文字
+  var dot = document.getElementById('relayDot');
+  var st = document.getElementById('relayStatus');
+  var btn = document.getElementById('connectBtn');
+  if (dot) dot.className = 'w-1.5 h-1.5 rounded-full bg-[#fbbf24] animate-pulse';
+  if (st) { st.textContent = '连接中'; st.style.color = '#fbbf24'; }
+  if (btn) { btn.textContent = '连接中…'; btn.style.background = '#222'; btn.style.color = '#ededed'; }
+  if (window.pywebview && window.pywebview.api && window.pywebview.api.toggle_connect) {
+    window.pywebview.api.toggle_connect();
+  } else {
+    // 浏览器直连模式:无后端可连
+    addLog('err', '浏览器直连模式暂不支持连接中转服务器,请使用桌面客户端');
+    health.relay = 'off';
+    if (dot) dot.className = 'w-1.5 h-1.5 rounded-full bg-[#666]';
+    if (st) { st.textContent = '未连接'; st.style.color = '#ddd'; }
+    if (btn) { btn.textContent = '连接'; btn.style.background = '#222'; btn.style.color = '#ededed'; }
+  }
+}
+function cancelCommand() {
+  // 停止当前正在执行的命令（经中继转发 cancel 给客户端 tcp_agent）
+  if (window.pywebview && window.pywebview.api && window.pywebview.api.cancel_command) {
+    window.pywebview.api.cancel_command();
+  } else {
+    addLog('err', '浏览器直连模式无法停止命令');
+  }
+}
+function configRelay() {
+  // 安全设置元素值（元素可能不存在时不会崩溃）
+  function setVal(id, val) {
+    var el = document.getElementById(id);
+    if (el) { el.value = val; }
+  }
+  function setChecked(id, val) {
+    var el = document.getElementById(id);
+    if (el) { el.checked = val; }
+  }
+
+  var currentRelayUrl = (document.getElementById('relayUrl') || {}).textContent;
+  setVal('modalRelayUrl', currentRelayUrl && currentRelayUrl !== '-' ? currentRelayUrl : 'https://your-server.com');
+  setVal('modalRelayKey', state.relayKey || '');
+  setChecked('modalAutoConnect', state.autoConnect || false);
+  setChecked('modalDirectMode', state.directMode || false);
+  setChecked('modalAutoReconnect', state.autoReconnect || false);
+  // 异步读取后端配置(覆盖初始值)
+  if (window.pywebview && window.pywebview.api) {
+    window.pywebview.api.get_settings().then(function(cfg) {
+      if (cfg && cfg.key) { state.relayKey = cfg.key; setVal('modalRelayKey', cfg.key); }
+      if (cfg && cfg.relayUrl) setVal('modalRelayUrl', cfg.relayUrl);
+      if (cfg && typeof cfg.autoConnect !== 'undefined') {
+        state.autoConnect = cfg.autoConnect;
+        setChecked('modalAutoConnect', cfg.autoConnect);
+      }
+      if (cfg && typeof cfg.directMode !== 'undefined') {
+        state.directMode = cfg.directMode;
+        setChecked('modalDirectMode', cfg.directMode);
+      }
+    }).catch(function() {});
+  }
+  var overlay = document.getElementById('configModal');
+  var content = document.getElementById('configModalContent');
+  if (!overlay || !content) return;
+  overlay.style.opacity = '1';
+  overlay.style.pointerEvents = 'auto';
+  setTimeout(function() {
+    content.style.transform = 'scale(1) translateY(0)';
+    content.style.opacity = '1';
+  }, 10);
+}
+function closeConfigModal() {
+  var overlay = document.getElementById('configModal');
+  var content = document.getElementById('configModalContent');
+  content.style.transform = 'scale(0.9) translateY(20px)';
+  content.style.opacity = '0';
+  setTimeout(function() {
+    overlay.style.opacity = '0';
+    overlay.style.pointerEvents = 'none';
+  }, 200);
+}
+function saveConfigModal() {
+  function getVal(id) {
+    var el = document.getElementById(id);
+    return el ? el.value.trim() : '';
+  }
+  function getChecked(id) {
+    var el = document.getElementById(id);
+    return el ? el.checked : false;
+  }
+
+  var url = getVal('modalRelayUrl');
+  var key = getVal('modalRelayKey') || state.relayKey || '';
+  if (url) {
+    var el = document.getElementById('relayUrl');
+    if (el) el.textContent = url;
+  }
+  if (key) state.relayKey = key;
+  state.autoConnect = getChecked('modalAutoConnect');
+  state.directMode = getChecked('modalDirectMode');
+  state.autoReconnect = getChecked('modalAutoReconnect');
+  try {
+    if (window.pywebview && window.pywebview.api) {
+      window.pywebview.api.save_settings(key, url, state.autoConnect, state.directMode);
+    }
+  } catch(e) {}
+  addLog('info', '中转服务器配置已更新');
+  closeConfigModal();
+}
+
+
+
+
+
+
+
+
+
+
+
+// -- task management --
+var _tasks = [];
+var _taskSeq = 0;
+
+function addTaskMarker(cmdText, kind) {
+  _taskSeq++;
+  var id = _taskSeq;
+  var col = document.getElementById('taskMarkerCol');
+  if (!col) return null;
+  var marker = document.createElement('div');
+  marker.className = 'task-marker active';
+  marker.id = 'tm-' + id;
+  marker.innerHTML = '<span class="tm-label">' + esc((cmdText||'?').slice(0,30)) + '</span>';
+  marker.onclick = function() { toggleTask(id); };
+  col.appendChild(marker);
+
+  // 注意:任务队列面板(taskList/taskPanelCount/taskPanelDot)归"用户发布任务"系统管理,
+  // 此处旧系统(Agent 执行轨迹)只保留左侧圆点列,不再写入队列面板,避免双系统互相覆盖。
+
+  var task = { id:id, cmd:cmdText, kind:kind||'cmd', markerEl:marker, blockEl:null, time:Date.now(), status:'running' };
+  _tasks.push(task);
+  return task;
+}
+
+function completeTask(id, exitCode) {
+  for (var i=0;i<_tasks.length;i++) {
+    if (_tasks[i].id === id) {
+      var t = _tasks[i];
+      t.status = exitCode === 0 ? 'done' : 'err';
+      var m = t.markerEl;
+      if (m) { m.className = 'task-marker ' + t.status; }
+      var pi = document.getElementById('tpi-' + id);
+      if (pi) {
+        var dot = pi.querySelector('.tp-dot');
+        if (dot) dot.className = 'tp-dot ' + t.status;
+        var txt = pi.querySelector('.tp-text');
+        if (txt) txt.className = 'tp-text done-text';
+      }
+      var block = t.blockEl;
+      if (block) block.classList.add('collapsed');
+      updateTaskCount();
+      break;
+    }
+  }
+}
+
+function toggleTask(id) {
+  for (var i=0;i<_tasks.length;i++) {
+    if (_tasks[i].id === id) {
+      var block = _tasks[i].blockEl;
+      if (block) {
+        block.classList.toggle('collapsed');
+        var m = _tasks[i].markerEl;
+        if (m) m.classList.toggle('active');
+      }
+      break;
+    }
+  }
+}
+
+function updateTaskCount() {
+  // 旧系统(Agent 执行轨迹)不再覆盖任务队列面板计数,避免与 pendingMessages 计数冲突。
+  // 面板计数由 renderTaskPanel 管理。
+}
+
+// wrap startCmdBlock to add task markers
+var _origSCB = startCmdBlock;
+startCmdBlock = function(cmdText, cmdObj) {
+  var kind = (cmdObj && cmdObj.type) || 'cmd';
+  var task = addTaskMarker(cmdText, kind);
+  if (!task) { if(_origSCB)_origSCB(cmdText,cmdObj); return; }
+
+  var log = logTarget();
+  var block = document.createElement('div');
+  block.className = 'task-block';
+  block.id = 'tb-' + task.id;
+  task.blockEl = block;
+
+  var innerBlock = document.createElement('div');
+  innerBlock.className = 'entry cmd-block animate-slide-up';
+  innerBlock.dataset.t = 'cmd';
+  var now = new Date();
+  var time = now.toTimeString().slice(0, 8);
+  var t = cmdObj && cmdObj.type ? cmdObj.type : 'action';
+  var badge = ['ACT', '#3b82f6'];
+  if (t === 'execute' || t === 'exec') badge = ['CMD', '#3b82f6'];
+  else if (t === 'exec_script') badge = ['SCRIPT', '#e0a458'];
+  else if (t === 'read') badge = ['FILE', '#a78bfa'];
+  else if (t === 'write') badge = ['FILE', '#a78bfa'];
+  else if (t === 'custom') badge = ['CUST', '#4ade80'];
+  else if (t === 'session') badge = ['SESS', '#e0a458'];
+
+  var title = document.createElement('div');
+  title.className = 'flex items-center gap-2 px-1.5 py-1 rounded cursor-pointer hover:bg-[#161616] transition-colors';
+  title.innerHTML =
+    '<span class="lg-time">' + time + '</span>' +
+    '<span class="lg-badge" style="color:' + badge[1] + ';border-color:' + badge[1] + '44;">' + badge[0] + '</span>' +
+    '<span class="text-[#93c5fd] font-medium flex-1 min-w-0 truncate">' + esc(cmdText || '') + '</span>' +
+    '<span class="text-[#888] text-[10px] animate-pulse" id="spinner-' + task.id + '">[WAIT]</span>' +
+    '<span class="text-[#555] text-[9px] flex-shrink-0">v</span>';
+  title.onclick = function() { toggleTask(task.id); };
+
+  var body = document.createElement('div');
+  body.className = 'cmd-body pl-[62px] pb-1 space-y-0.5';
+  body.innerHTML = '<div class="text-[10px] text-[#555]">(executing...)</div>';
+
+  innerBlock.appendChild(title);
+  innerBlock.appendChild(body);
+  block.appendChild(innerBlock);
+  log.appendChild(block);
+  scrollLog();
+  trimLog();
+  return block;
+};
+
+// wrap addCmdBlock to associate with task
+var _origACB = addCmdBlock;
+addCmdBlock = function(cmd, meta, p) {
+  var task = null;
+  for (var i=_tasks.length-1;i>=0;i--) {
+    if (_tasks[i].status === 'running') { task = _tasks[i]; break; }
+  }
+
+  var log = logTarget();
+  var block = document.createElement('div');
+  block.className = task ? 'task-block' : '';
+  if (task) { block.id = 'tb-' + task.id; task.blockEl = block; }
+
+  var innerBlock = document.createElement('div');
+  innerBlock.className = 'entry cmd-block animate-slide-up';
+  innerBlock.dataset.t = 'cmd';
+  var now = new Date();
+  var time = now.toTimeString().slice(0, 8);
+  var ok = !p || p.exitCode === 0;
+  var dur = null;
+  if (meta && meta.duration != null) dur = meta.duration;
+  else if (p && p.duration != null) dur = p.duration;
+  var durText = dur != null ? Math.round(dur) + 'ms' : '';
+  var exitText = (p && p.exitCode !== undefined) ? (ok ? 'OK ' : 'FAIL ') + p.exitCode : '';
+
+  var kind = (p && p.kind) || (meta && meta.kind) || '';
+  var badge = ['CMD', '#3b82f6'];
+  var prefix = '$ ';
+  var kindLabel = '';
+  if (kind === 'exec_script') { badge = ['SCRIPT', '#e0a458']; prefix = ''; }
+  else if (kind === 'get_environment') { badge = ['ENV', '#a78bfa']; prefix = ''; }
+  else if (kind === 'read_file') { badge = ['FILE', '#a78bfa']; prefix = '[FILE] '; }
+  else if (kind === 'write_file') { badge = ['FILE', '#a78bfa']; prefix = '[WRITE] '; }
+  else if (kind === 'custom') { badge = ['CUST', '#4ade80']; prefix = '[CUST] '; }
+  else if (kind === 'project_status') { badge = ['PKG', '#4ade80']; prefix = ''; }
+  else if (kind === 'codegraph_index') { badge = ['IDX', '#a78bfa']; prefix = ''; }
+  if (p && p.language) kindLabel = '<span class="text-[9px] text-[#888] border border-[#333] rounded px-1 flex-shrink-0">' + esc(p.language) + '</span>';
+
+  var title = document.createElement('div');
+  title.className = 'flex items-center gap-2 px-1.5 py-1 rounded cursor-pointer hover:bg-[#161616] transition-colors';
+  title.innerHTML =
+    '<span class="lg-time">' + time + '</span>' +
+    '<span class="lg-badge" style="color:' + badge[1] + ';border-color:' + badge[1] + '44;">' + badge[0] + '</span>' +
+    kindLabel +
+    '<span class="text-[#93c5fd] font-medium flex-1 min-w-0 truncate">' + prefix + esc(cmd || '') + '</span>' +
+    (durText ? '<span class="text-[9px] text-[#666] font-mono flex-shrink-0">' + durText + '</span>' : '') +
+    (exitText ? '<span class="text-[10px] font-mono flex-shrink-0 ' + (ok ? 'text-[#4ade80]' : 'text-[#ff6b6b]') + '">' + exitText + '</span>' : '') +
+    '<span class="text-[#555] text-[9px] flex-shrink-0">v</span>';
+
+  if (task) {
+    var spinner = document.getElementById('spinner-' + task.id);
+    if (spinner) spinner.remove();
+    if (p && p.exitCode !== undefined) {
+      completeTask(task.id, p.exitCode);
+    }
+  }
+
+  var body = document.createElement('div');
+  body.className = 'cmd-body pl-[62px] pb-1 space-y-0.5';
+  var lines = [];
+  if (meta && meta.cwd) lines.push('<div class="text-[10px] text-[#777]">[DIR] ' + esc(meta.cwd) + '</div>');
+
+  if (kind === 'get_environment' && p && p.data) {
+    lines.push(renderEnvProfile(p.data));
+  } else {
+    if (p && p.stdout) lines.push('<pre class="text-[#d4d4d4] whitespace-pre-wrap break-all">' + esc(p.stdout) + '</pre>');
+    if (p && p.stderr) lines.push('<pre class="text-[#ff8a8a] whitespace-pre-wrap break-all">' + esc(p.stderr) + '</pre>');
+  }
+  if (p && p.killed) lines.push('<div class="text-[10px] text-[#fbbf24]">[TIMEOUT]</div>');
+  if (lines.length === 0) lines.push('<div class="text-[10px] text-[#555]">(no output)</div>');
+  body.innerHTML = lines.join('');
+
+  title.addEventListener('click', function() {
+    var hidden = body.style.display === 'none';
+    body.style.display = hidden ? '' : 'none';
+    var arrow = title.lastElementChild;
+    if (arrow) arrow.textContent = hidden ? 'v' : '>';
+  });
+  innerBlock.appendChild(title);
+  innerBlock.appendChild(body);
+  block.appendChild(innerBlock);
+
+  if (logFilter !== 'all' && logFilter !== 'cmd') block.style.display = 'none';
+  log.appendChild(block);
+  scrollLog();
+  trimLog();
+};
+
+// patch command_result bridge to auto-complete task
+var _origHB = handleBridge;
+handleBridge = function(action, data) {
+  if (_origHB) _origHB(action, data);
+  if (action === 'command_result' && data) {
+    for (var i=_tasks.length-1;i>=0;i--) {
+      if (_tasks[i].status === 'running') {
+        completeTask(_tasks[i].id, data.exitCode);
+        break;
+      }
+    }
+  }
+};
+</script>
+
+<!-- 配置弹窗 -->
+<div id="configModal" class="fixed inset-0 flex items-center justify-center z-50 transition-all duration-300" style="background: rgba(0,0,0,0.6); opacity: 0; pointer-events: none; backdrop-filter: blur(4px);">
+  <div id="configModalContent" class="rounded-xl bg-[#1a1a1a] border border-[#333] shadow-2xl w-80 transition-all duration-300" style="transform: scale(0.9) translateY(20px); opacity: 0;">
+    <div class="px-4 py-3 border-b border-[#222]">
+      <span class="text-sm font-medium text-[#ededed]">中转服务器配置</span>
+    </div>
+    <div class="px-4 py-3 space-y-3">
+      <div>
+        <label class="text-xs text-[#888] block mb-1">中继服务器 TCP 地址</label>
+        <input type="text" id="modalRelayUrl" class="w-full bg-[#0d0d0d] border border-[#333] rounded-lg px-3 py-2 text-xs text-[#ededed] outline-none font-mono transition-colors focus:border-[#555]" value="" placeholder="https://your-server.com" />
+        <div class="text-[10px] text-[#666] mt-1">🔗 客户端反向 TCP 直连地址</div>
+      </div>
+      <div>
+        <label class="text-xs text-[#888] block mb-1">管理员密钥</label>
+        <input type="password" id="modalRelayKey" class="w-full bg-[#0d0d0d] border border-[#333] rounded-lg px-3 py-2 text-xs text-[#ededed] outline-none font-mono transition-colors focus:border-[#555]" value="" />
+        <div class="text-[10px] text-[#666] mt-1">🔑 中继服务器管理员密钥（用于 MCP 认证）</div>
+      </div>
+      <div class="flex items-center gap-2">
+        <input type="checkbox" id="modalAutoConnect" class="w-3 h-3 rounded" />
+        <label for="modalAutoConnect" class="text-xs text-[#888]">启动时自动连接</label>
+      </div>
+      <div class="flex items-center gap-2">
+        <input type="checkbox" id="modalDirectMode" class="w-3 h-3 rounded" />
+        <label for="modalDirectMode" class="text-xs text-[#888]">Clash 直连模式 (加 DIRECT 规则绕过代理)</label>
+      </div>
+      <div class="flex items-center gap-2">
+        <input type="checkbox" id="modalAutoReconnect" class="w-3 h-3 rounded" />
+        <label for="modalAutoReconnect" class="text-xs text-[#888]">断开后自动重连</label>
+      </div>
+    </div>
+    <div class="flex gap-2 px-4 py-3 border-t border-[#222]">
+      <button class="flex-1 text-xs py-2 rounded-lg bg-[#333] text-[#aaa] hover:bg-[#444] hover:text-[#ededed] transition-all font-medium" onclick="closeConfigModal()" title="取消中继服务器配置">取消</button>
+      <button class="flex-1 text-xs py-2 rounded-lg bg-[#ededed] text-[#0a0a0a] hover:bg-white transition-all font-medium" onclick="saveConfigModal()" title="保存中继服务器配置">确定</button>
+    </div>
+  </div>
+</div>
+
+<!-- 新建工作区弹窗 -->
+<div id="sessionModal" class="fixed inset-0 flex items-center justify-center z-50 transition-all duration-300" style="background: rgba(0,0,0,0.6); opacity: 0; pointer-events: none; backdrop-filter: blur(4px);">
+  <div id="sessionModalContent" class="rounded-xl bg-[#1a1a1a] border border-[#333] shadow-2xl w-80 transition-all duration-300" style="transform: scale(0.9) translateY(20px); opacity: 0;">
+    <div class="px-4 py-3 border-b border-[#222]">
+      <span class="text-sm font-medium text-[#ededed]">新建工作区</span>
+    </div>
+    <div class="px-4 py-3 space-y-3">
+      <div>
+        <label class="text-xs text-[#888] block mb-1">工作区名称</label>
+        <input type="text" id="modalSessionName" class="w-full bg-[#0d0d0d] border border-[#333] rounded-lg px-3 py-2 text-xs text-[#ededed] outline-none font-mono transition-colors focus:border-[#555]" placeholder="输入名称" />
+      </div>
+      <div>
+        <label class="text-xs text-[#888] block mb-1">工作目录</label>
+        <div class="flex gap-2">
+          <input type="text" id="modalSessionDir" class="flex-1 bg-[#0d0d0d] border border-[#333] rounded-lg px-3 py-2 text-xs text-[#ededed] outline-none font-mono transition-colors focus:border-[#555]" placeholder="C:\Users\Administrator" />
+          <button class="text-xs px-3 py-2 rounded-lg bg-[#333] text-[#aaa] hover:bg-[#444] hover:text-[#ededed] transition-all" onclick="browseSessionDir(event)" title="选择工作目录">浏览</button>
+        </div>
+      </div>
+    </div>
+    <div class="flex gap-2 px-4 py-3 border-t border-[#222]">
+      <button class="flex-1 text-xs py-2 rounded-lg bg-[#333] text-[#aaa] hover:bg-[#444] hover:text-[#ededed] transition-all font-medium" onclick="closeSessionModal()" title="取消新建工作区">取消</button>
+      <button class="flex-1 text-xs py-2 rounded-lg bg-[#ededed] text-[#0a0a0a] hover:bg-white transition-all font-medium" onclick="saveSessionModal()" title="保存工作区">确定</button>
+    </div>
+  </div>
+</div>
+</body>
+</html>
