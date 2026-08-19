@@ -172,3 +172,14 @@ sudo systemctl enable --now yunqiao-webui
 - `tcp_agent.py` 适配 Linux：`python3` 解释器、`pgrep` 进程管理、bash 语言
 - `start_process` 日志参数用 **`redirectLog`**
 - WebUI 由后端直接提供（Windows 桌面版是 pywebview 壳）
+
+## 🧠 代码知识图谱（CodeGraph）
+
+内置 CodeGraph 语义索引（`@colbymchenry/codegraph`），自动维护工作区代码图谱：
+
+- **建立索引**：打开某个代码目录后点 **🧠 建立索引**（或右上角 🧠 索引），全量构建（进度条实时显示：扫描 → 解析 → 图谱节点/边）
+- **自动同步**：索引后代码变更自动增量同步（`codegraph sync`）
+- **状态**：WebUI 显示当前工作区索引状态（已索引/就绪/未安装）
+- **命令行**：`cd <项目> && codegraph explore <符号>` / `query` / `callers` / `impact` 等完整代码智能
+- install.sh 会自动安装 codegraph；手动安装：`npm install -g @colbymchenry/codegraph`
+
