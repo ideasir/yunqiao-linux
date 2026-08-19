@@ -68,6 +68,14 @@ if ! command -v node >/dev/null 2>&1 || [ "$(node -v | tr -dc '0-9' | cut -c1-2)
 fi
 command -v node >/dev/null 2>&1 || die "Node.js 未安装成功"
 
+# codegraph 知识图谱工具（可选依赖，装不上不阻塞）
+if ! command -v codegraph >/dev/null 2>&1; then
+  log "安装 codegraph（代码知识图谱，可选）..."
+  npm install -g @colbymchenry/codegraph --registry=https://registry.npmmirror.com >/dev/null 2>&1 || \
+    npm install -g @colbymchenry/codegraph >/dev/null 2>&1 || true
+  command -v codegraph >/dev/null 2>&1 && log "✅ codegraph 安装完成（WebUI 中可用 🧠 建立索引）" || warn "codegraph 安装失败（不影响本体，需要图谱功能时手动: npm i -g @colbymchenry/codegraph）"
+fi
+
 # ─── 1.5 Python 依赖验证 + 自动补救 ─────────────
 # apt 可能因依赖问题装不上（如 libsecret），失败时用 pip 补救
 if ! python3 -c "import psutil" >/dev/null 2>&1 || ! python3 -c "import websockets" >/dev/null 2>&1; then
